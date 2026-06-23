@@ -1,0 +1,12 @@
+pyobjc-framework-Vision
+pyobjc-framework-Quartz
+pillow
+requests
+chromadb
+
+markitdown[all]
+watchdog
+pymupdf
+ollama
+numpy
+opencv-python

@@ -1,0 +1,28 @@
+# Python
+.venv/
+__pycache__/
+*.pyc
+
+
+# macOS
+.DS_Store
+
+
+# Lenslet runtime data
+data/
+memories/
+chroma_db/
+
+
+# screenshots
+capture.png
+
+
+# logs
+*.log
+
+
+# env
+.env
+
+legacy/
