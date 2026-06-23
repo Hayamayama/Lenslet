@@ -1,55 +1,103 @@
-from lenslet_core.capture import capture_screen
-from lenslet_core.ocr import extract_text
-from lenslet_core.llm import summarize
-from lenslet_core.memory import save_memory
-from lenslet_core.vector_memory import add_memory, search_related
+from __future__ import annotations
+
+import argparse
+import json
+
+from lenslet_core.pipeline import run_capture_pipeline
 
 
-print("📸 Capture something")
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description="Run the Lenslet capture pipeline."
+    )
 
-image = capture_screen()
+    parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output a JSON payload for the macOS Swift app.",
+    )
+
+    parser.add_argument(
+        "--image",
+        type=str,
+        default=None,
+        help="Use an existing image instead of capturing the screen.",
+    )
+
+    return parser.parse_args()
 
 
-print("👀 Reading...")
+def main() -> int:
+    args = parse_args()
 
-text = extract_text(image)
+    if not args.json:
+        print("📸 Capture something")
 
-print("\n====== OCR ======")
-print(text)
+    try:
+        result = run_capture_pipeline(
+            image_path=args.image,
+        )
+
+    except Exception as exc:
+        error_payload = {
+            "status": "error",
+            "error_type": exc.__class__.__name__,
+            "error": str(exc),
+        }
+
+        if args.json:
+            print(
+                json.dumps(
+                    error_payload,
+                    ensure_ascii=False,
+                    indent=2,
+                )
+            )
+        else:
+            print("❌ Lenslet failed")
+            print(f"{exc.__class__.__name__}: {exc}")
+
+        return 1
+
+    if args.json:
+        print(
+            json.dumps(
+                result,
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
+        return 0
+
+    print("\n====== OCR ======")
+    print(result["ocr"])
+
+    print("\n====== SUMMARY ======")
+    print(result["summary"])
+
+    print("\n====== RELATED MEMORIES ======")
+    related = result.get("related", [])
+
+    if not related:
+        print("No related memories yet.")
+    else:
+        for item in related:
+            path = item.get("path", "unknown")
+            distance = item.get("distance")
+            preview = item.get("text", "")[:200]
+
+            if distance is None:
+                print(f"- {path}")
+            else:
+                print(f"- {path}  distance={distance:.4f}")
+
+            print(preview)
+            print()
+
+    print(f"\n💾 Saved memory: {result['memory_path']}")
+
+    return 0
 
 
-print("\n🧠 Thinking...")
-
-summary = summarize(text)
-
-
-print("\n====== SUMMARY ======")
-print(summary)
-
-memory_path = save_memory(
-    text,
-    summary
-)
-
-print(f"\n💾 Memory saved to {memory_path}")
-
-memory_id = memory_path.stem
-
-related = search_related(summary, n_results=3)
-
-print("\n====== RELATED MEMORIES ======")
-
-if not related:
-    print("No related memories yet.")
-else:
-    for item in related:
-        print(f"- {item['path']}  distance={item['distance']:.4f}")
-        print(item["text"][:200])
-        print()
-
-add_memory(
-    memory_id=memory_id,
-    text=text,
-    summary=summary,
-    path=memory_path
-)
+if __name__ == "__main__":
+    raise SystemExit(main())
