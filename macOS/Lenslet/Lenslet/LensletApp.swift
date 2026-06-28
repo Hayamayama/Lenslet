@@ -7,6 +7,7 @@ final class LensletRuntime {
 
     var latestResult: LensletResult?
     var resultWindow: NSWindow?
+    var memoryBrowserWindow: NSWindow?
     var statusWindow: NSWindow?
     var currentProcess: Process?
 
@@ -40,6 +41,10 @@ struct LensletApp: App {
                 if let result = runtime.latestResult {
                     showResultWindow(result)
                 }
+            }
+
+            Button("Memories") {
+                showMemoryBrowserWindow()
             }
 
             Divider()
@@ -306,5 +311,40 @@ struct LensletApp: App {
         NSApp.activate(ignoringOtherApps: true)
 
         runtime.resultWindow = window
+    }
+
+    func showMemoryBrowserWindow() {
+        guard Thread.isMainThread else {
+            DispatchQueue.main.async {
+                showMemoryBrowserWindow()
+            }
+            return
+        }
+
+        if let existingWindow = runtime.memoryBrowserWindow {
+            existingWindow.makeKeyAndOrderFront(nil)
+            NSApp.activate(ignoringOtherApps: true)
+            return
+        }
+
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 920, height: 640),
+            styleMask: [.titled, .closable, .resizable],
+            backing: .buffered,
+            defer: false
+        )
+        window.isReleasedWhenClosed = false
+        window.animationBehavior = .none
+
+        window.center()
+        window.title = "Lenslet Memories"
+        window.contentView = NSHostingView(
+            rootView: MemoryBrowserView()
+        )
+
+        window.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+
+        runtime.memoryBrowserWindow = window
     }
 }
