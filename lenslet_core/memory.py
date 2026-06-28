@@ -1,48 +1,52 @@
-from pathlib import Path
+from __future__ import annotations
+
 from datetime import datetime
+from pathlib import Path
+from textwrap import dedent
+from uuid import uuid4
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 MEMORY_DIR = PROJECT_ROOT / "memories"
 
-MEMORY_DIR.mkdir(exist_ok=True)
+MEMORY_DIR.mkdir(parents=True, exist_ok=True)
+
+
+def _safe_text(value: str | None) -> str:
+    return (value or "").strip()
 
 
 def save_memory(
-    ocr_text,
-    summary
-):
+    ocr_text: str,
+    summary: str,
+) -> Path:
+    ocr_text = _safe_text(ocr_text)
+    summary = _safe_text(summary)
+
+    if not ocr_text and not summary:
+        raise ValueError("Cannot save an empty memory.")
 
     now = datetime.now()
+    memory_id = f"{now.strftime('%Y-%m-%d_%H-%M-%S')}_{uuid4().hex[:8]}"
+    path = MEMORY_DIR / f"{memory_id}.md"
 
-    filename = now.strftime(
-        "%Y-%m-%d_%H-%M-%S.md"
-    )
+    content = dedent(
+        f"""
+        # Lenslet Memory
 
-    path = MEMORY_DIR / filename
+        Created: {now.isoformat()}
+        Source: screen_capture
+        Memory ID: {memory_id}
 
+        ## Summary
 
-    content = f"""
-# Lenslet Memory
+        {summary or "No summary generated."}
 
-Created:
-{now.isoformat()}
+        ## Original Capture
 
+        {ocr_text or "No OCR text captured."}
+        """
+    ).strip() + "\n"
 
-## Summary
-
-{summary}
-
-
-## Original Capture
-
-{ocr_text}
-
-"""
-
-    path.write_text(
-        content,
-        encoding="utf-8"
-    )
-
+    path.write_text(content, encoding="utf-8")
 
     return path

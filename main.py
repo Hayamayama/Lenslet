@@ -3,7 +3,16 @@ from __future__ import annotations
 import argparse
 import json
 
+
 from lenslet_core.pipeline import run_capture_pipeline
+
+REQUIRED_RESULT_KEYS = {
+    "status",
+    "ocr",
+    "summary",
+    "memory_path",
+    "related",
+}
 
 
 def parse_args() -> argparse.Namespace:
@@ -38,6 +47,12 @@ def main() -> int:
             image_path=args.image,
         )
 
+        missing = REQUIRED_RESULT_KEYS - result.keys()
+        if missing:
+            raise RuntimeError(
+                f"Pipeline returned an incomplete result. Missing keys: {sorted(missing)}"
+            )
+
     except Exception as exc:
         error_payload = {
             "status": "error",
@@ -60,9 +75,13 @@ def main() -> int:
         return 1
 
     if args.json:
+        payload = {
+            **result,
+            "error": result.get("error"),
+        }
         print(
             json.dumps(
-                result,
+                payload,
                 ensure_ascii=False,
                 indent=2,
             )
@@ -94,7 +113,7 @@ def main() -> int:
             print(preview)
             print()
 
-    print(f"\n💾 Saved memory: {result['memory_path']}")
+    print(f"\n💾 Saved memory: {result.get('memory_path', 'Not saved')}")
 
     return 0
 
