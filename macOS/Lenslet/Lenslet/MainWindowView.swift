@@ -17,6 +17,7 @@ struct MainWindowView: View {
     @State private var selectedMemory: LensletMemory?
     @State private var searchText = ""
     @State private var selectedTag: String? = nil
+    @State private var showingMap = false
     @State private var relatedMemories: [RelatedMemory] = []
     @State private var isLoadingRelated = false
 
@@ -85,36 +86,52 @@ struct MainWindowView: View {
                         }
                         .help("Reload memories")
                     }
-                }
-        } detail: {
-            VStack(spacing: 0) {
-                Group {
-                    if let memory = selectedMemory {
-                        MemoryDetailView(
-                            memory: memory,
-                            relatedMemories: relatedMemories,
-                            isLoadingRelated: isLoadingRelated,
-                            onSelectRelated: { path in
-                                selectedMemory = memories.first { $0.path == path }
-                            },
-                            onTagsChanged: { newTags in
-                                store.saveTags(newTags, for: memory)
-                                if let idx = memories.firstIndex(where: { $0.id == memory.id }) {
-                                    var updated = memories[idx]
-                                    updated.tags = newTags
-                                    memories[idx] = updated
-                                    selectedMemory = memories[idx]
-                                }
-                            }
-                        )
-                        .id(memory.id)
-                    } else {
-                        emptyDetail
+                    ToolbarItem(placement: .primaryAction) {
+                        Button {
+                            showingMap.toggle()
+                        } label: {
+                            Image(systemName: showingMap ? "list.bullet" : "map")
+                        }
+                        .help(showingMap ? "Show memory list" : "Show knowledge map")
                     }
                 }
-                .frame(maxHeight: .infinity)
+        } detail: {
+            if showingMap {
+                KnowledgeMapView(onSelectMemory: { path in
+                    showingMap = false
+                    selectedMemory = memories.first { $0.path == path }
+                })
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                VStack(spacing: 0) {
+                    Group {
+                        if let memory = selectedMemory {
+                            MemoryDetailView(
+                                memory: memory,
+                                relatedMemories: relatedMemories,
+                                isLoadingRelated: isLoadingRelated,
+                                onSelectRelated: { path in
+                                    selectedMemory = memories.first { $0.path == path }
+                                },
+                                onTagsChanged: { newTags in
+                                    store.saveTags(newTags, for: memory)
+                                    if let idx = memories.firstIndex(where: { $0.id == memory.id }) {
+                                        var updated = memories[idx]
+                                        updated.tags = newTags
+                                        memories[idx] = updated
+                                        selectedMemory = memories[idx]
+                                    }
+                                }
+                            )
+                            .id(memory.id)
+                        } else {
+                            emptyDetail
+                        }
+                    }
+                    .frame(maxHeight: .infinity)
 
-                chatPanel
+                    chatPanel
+                }
             }
         }
         .onAppear { reloadMemories() }
