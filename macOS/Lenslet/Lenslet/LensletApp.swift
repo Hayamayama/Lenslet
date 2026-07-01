@@ -643,12 +643,11 @@ final class LensletRuntime {
         NSApp.activate(ignoringOtherApps: true)
         documentBrowserWindow = window
     }
-}
 
     // MARK: Chat query
 
     func runChatQuery(question: String, completion: @escaping (Result<LensletQueryResult, Error>) -> Void) {
-        let projectURL = projectURL
+        let projectURL = self.projectURL
         let pythonURL = projectURL.appendingPathComponent(".venv/bin/python")
 
         guard FileManager.default.fileExists(atPath: pythonURL.path) else {
@@ -692,7 +691,7 @@ final class LensletRuntime {
     // MARK: Related memory search
 
     func searchRelated(query: String, topK: Int = 5, completion: @escaping ([RelatedMemory]) -> Void) {
-        let projectURL = projectURL
+        let projectURL = self.projectURL
         let pythonURL = projectURL.appendingPathComponent(".venv/bin/python")
 
         guard FileManager.default.fileExists(atPath: pythonURL.path) else {
