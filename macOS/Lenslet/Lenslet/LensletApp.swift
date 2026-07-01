@@ -195,14 +195,17 @@ final class LensletRuntime {
 
     func importPDF() {
         let panel = NSOpenPanel()
-        panel.title = "Import PDF into Lenslet"
+        panel.title = "Import PDFs into Lenslet"
         panel.prompt = "Import"
         panel.canChooseFiles = true
-        panel.canChooseDirectories = false
-        panel.allowsMultipleSelection = false
-        panel.allowedContentTypes = [.pdf]
+        panel.canChooseDirectories = true
+        panel.allowsMultipleSelection = true
+        panel.allowedContentTypes = [.pdf, .folder]
+        panel.message = "Select one or more PDF files, or a folder containing PDFs."
 
-        guard panel.runModal() == .OK, let pdfURL = panel.url else { return }
+        guard panel.runModal() == .OK else { return }
+        let selectedURLs = panel.urls
+        guard !selectedURLs.isEmpty else { return }
 
         let projectURL = projectURL
         let pythonURL = projectURL.appendingPathComponent(".venv/bin/python")
@@ -217,32 +220,77 @@ final class LensletRuntime {
             return
         }
 
-        let runID = UUID().uuidString
-        let tempURL = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
-        let resultURL = tempURL.appendingPathComponent("lenslet_pdf_ingest_\(runID).json")
-        let errorURL = tempURL.appendingPathComponent("lenslet_pdf_ingest_error_\(runID).log")
-
-        try? FileManager.default.removeItem(at: resultURL)
-        try? FileManager.default.removeItem(at: errorURL)
-
-        showStatusWindow("Lenslet is importing PDF…", detail: "Extracting text, chunking pages, and storing vector memory.")
-
-        let command = """
-        cd "\(projectURL.path)" && "\(pythonURL.path)" main.py --json --pdf "\(pdfURL.path)" > "\(resultURL.path)" 2> "\(errorURL.path)"
-        """
+        let fileCount = selectedURLs.count
+        let detail = fileCount == 1
+            ? "Processing \(selectedURLs[0].lastPathComponent)…"
+            : "Processing \(fileCount) files…"
+        showStatusWindow("Lenslet is importing PDFs…", detail: detail)
 
         let process = Process()
         currentProcess = process
-        process.executableURL = URL(fileURLWithPath: "/bin/zsh")
-        process.arguments = ["-lc", command]
+        process.currentDirectoryURL = projectURL
+        process.executableURL = pythonURL
+
+        var args = ["main.py", "--json", "--pdf-batch"]
+        args += selectedURLs.map { $0.path }
+        process.arguments = args
         process.environment = [
             "PATH": "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin",
             "PYTHONPATH": projectURL.path
         ]
 
+        let outputPipe = Pipe()
+        let errorPipe = Pipe()
+        process.standardOutput = outputPipe
+        process.standardError = errorPipe
+
+        // Accumulate all output lines; update status window on progress lines
+        var outputLines: [String] = []
+        var buffer = Data()
+
+        outputPipe.fileHandleForReading.readabilityHandler = { handle in
+            let chunk = handle.availableData
+            guard !chunk.isEmpty else { return }
+            buffer.append(chunk)
+
+            // Process complete lines
+            while let newlineRange = buffer.range(of: Data([0x0A])) {
+                let lineData = buffer[buffer.startIndex..<newlineRange.lowerBound]
+                buffer.removeSubrange(buffer.startIndex...newlineRange.lowerBound)
+
+                guard let line = String(data: lineData, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines),
+                      !line.isEmpty else { continue }
+
+                outputLines.append(line)
+
+                // Parse progress JSON lines and update UI
+                if let data = line.data(using: .utf8),
+                   let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+                    let type = json["type"] as? String ?? ""
+                    if type == "file_done" {
+                        let idx = json["file_index"] as? Int ?? 0
+                        let total = json["total_files"] as? Int ?? fileCount
+                        let name = json["filename"] as? String ?? ""
+                        DispatchQueue.main.async {
+                            LensletRuntime.shared.updateStatusDetail("File \(idx)/\(total): \(name)")
+                        }
+                    }
+                }
+            }
+        }
+
         process.terminationHandler = { _ in
+            outputPipe.fileHandleForReading.readabilityHandler = nil
+            // Flush remaining buffer
+            if !buffer.isEmpty, let line = String(data: buffer, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines), !line.isEmpty {
+                outputLines.append(line)
+            }
+            let errorText = String(data: errorPipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
+
+            // Find the final summary line {"status":"success","reports":[...]}
+            let finalLine = outputLines.last(where: { $0.contains("\"status\"") }) ?? ""
             DispatchQueue.main.async {
-                LensletRuntime.shared.handlePDFIngestResult(resultURL: resultURL, errorURL: errorURL)
+                LensletRuntime.shared.handlePDFBatchResult(jsonLine: finalLine, errorText: errorText)
             }
         }
 
@@ -425,6 +473,14 @@ final class LensletRuntime {
         if let outputText = String(data: outputData, encoding: .utf8) { print(outputText) }
 
         do {
+            // Try batch result first (--pdf-batch returns {"status","reports":[...]})
+            if let batch = try? JSONDecoder().decode(BatchPdfIngestResult.self, from: outputData),
+               batch.status == "success" {
+                closeStatusWindow()
+                showMessageWindow(title: "PDFs Imported", message: batch.displayMessage)
+                return
+            }
+            // Single PDF fallback
             let decoded = try JSONDecoder().decode(PdfIngestResult.self, from: outputData)
             closeStatusWindow()
             if decoded.isSuccess {
@@ -541,6 +597,34 @@ final class LensletRuntime {
         window.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
         statusWindow = window
+    }
+
+    func updateStatusDetail(_ detail: String) {
+        guard let window = statusWindow else { return }
+        // Re-render the status window content with updated detail text
+        window.contentView = NSHostingView(
+            rootView: VStack(spacing: 12) {
+                ProgressView().controlSize(.large)
+                Text("Lenslet is importing PDFs…").font(.headline)
+                Text(detail).font(.caption).foregroundStyle(.secondary).lineLimit(2)
+            }
+            .padding(24)
+            .frame(width: 320, height: 140)
+        )
+    }
+
+    func handlePDFBatchResult(jsonLine: String, errorText: String) {
+        defer { currentProcess = nil }
+        closeStatusWindow()
+
+        guard !jsonLine.isEmpty,
+              let data = jsonLine.data(using: .utf8),
+              let batch = try? JSONDecoder().decode(BatchPdfIngestResult.self, from: data),
+              batch.status == "success" else {
+            showErrorWindow("PDF import failed or returned no output.\n\nPython stderr:\n\(errorText.isEmpty ? "No stderr output." : errorText)")
+            return
+        }
+        showMessageWindow(title: "PDFs Imported", message: batch.displayMessage)
     }
 
     func closeStatusWindow() {
@@ -749,7 +833,11 @@ final class LensletRuntime {
 
     // MARK: Chat query
 
-    func runChatQuery(question: String, completion: @escaping (Result<LensletQueryResult, Error>) -> Void) {
+    func runChatQuery(
+        question: String,
+        history: [[String: String]] = [],
+        completion: @escaping (Result<LensletQueryResult, Error>) -> Void
+    ) {
         let projectURL = self.projectURL
         let pythonURL = projectURL.appendingPathComponent(".venv/bin/python")
 
@@ -758,12 +846,27 @@ final class LensletRuntime {
             return
         }
 
+        // Write conversation history to a temp file
+        let tempURL = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
+        let historyURL = tempURL.appendingPathComponent("lenslet_history_\(UUID().uuidString).json")
+        var historyFilePath: String? = nil
+        if !history.isEmpty,
+           let historyData = try? JSONSerialization.data(withJSONObject: history) {
+            try? historyData.write(to: historyURL)
+            historyFilePath = historyURL.path
+        }
+
         let outputPipe = Pipe()
         let errorPipe = Pipe()
         let process = Process()
         process.currentDirectoryURL = projectURL
         process.executableURL = pythonURL
-        process.arguments = ["-m", "lenslet_core.query", question, "--json"]
+
+        var args = ["-m", "lenslet_core.query", question, "--json"]
+        if let histPath = historyFilePath {
+            args += ["--history-file", histPath]
+        }
+        process.arguments = args
         process.environment = [
             "PATH": "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin",
             "PYTHONPATH": projectURL.path
@@ -773,6 +876,10 @@ final class LensletRuntime {
 
         process.terminationHandler = { _ in
             let data = outputPipe.fileHandleForReading.readDataToEndOfFile()
+            // Clean up history temp file
+            if let histPath = historyFilePath {
+                try? FileManager.default.removeItem(atPath: histPath)
+            }
             DispatchQueue.main.async {
                 do {
                     let result = try JSONDecoder().decode(LensletQueryResult.self, from: data)

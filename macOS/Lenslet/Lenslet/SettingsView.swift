@@ -73,6 +73,7 @@ struct SettingsView: View {
         Form {
             projectSection
             modelSection
+            visionSection
             memorySection
             vectorDBSection
         }
@@ -119,6 +120,69 @@ struct SettingsView: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }
+    }
+
+    // MARK: Vision section
+
+    @State private var visionEnabled: Bool = UserDefaults.standard.bool(forKey: "vision_enabled")
+    @State private var visionOllamaModel: String = UserDefaults.standard.string(forKey: "vision_ollama_model") ?? "qwen2.5vl:7b"
+
+    private var visionSection: some View {
+        Section("Vision (PDF structured content)") {
+            Toggle("Enable Vision LLM for tables & diagrams", isOn: $visionEnabled)
+                .onChange(of: visionEnabled) { _, val in
+                    UserDefaults.standard.set(val, forKey: "vision_enabled")
+                    saveSetting("vision_enabled", val ? "true" : "false")
+                }
+
+            if visionEnabled {
+                if settings.modelBackend == "ollama" {
+                    HStack {
+                        Text("Vision model")
+                        Spacer()
+                        TextField("", text: $visionOllamaModel)
+                            .frame(width: 140)
+                            .multilineTextAlignment(.trailing)
+                            .onSubmit {
+                                UserDefaults.standard.set(visionOllamaModel, forKey: "vision_ollama_model")
+                                saveSetting("vision_ollama_model", visionOllamaModel)
+                            }
+                    }
+                    Text("Pull with: ollama pull \(visionOllamaModel)")
+                        .font(.caption).foregroundStyle(.secondary)
+                } else {
+                    if settings.claudeApiKey.isEmpty {
+                        Label("No Claude API key set — will fall back to Ollama qwen2.5vl:7b for vision.", systemImage: "exclamationmark.triangle")
+                            .font(.caption).foregroundStyle(.orange)
+                    } else {
+                        Text("Will use \(settings.claudeModel) with vision input.")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                }
+                Text("When enabled, pages with tables or diagrams are sent to the Vision LLM for structured extraction. Requires API calls (Claude) or local model (Ollama).")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    private func saveSetting(_ key: String, _ value: String) {
+        let projectURL = LensletRuntime.shared.projectURL
+        let pythonURL = projectURL.appendingPathComponent(".venv/bin/python")
+        guard FileManager.default.fileExists(atPath: pythonURL.path) else { return }
+        let process = Process()
+        process.currentDirectoryURL = projectURL
+        process.executableURL = pythonURL
+        process.arguments = ["-c", """
+import sys; sys.path.insert(0,'.')
+from lenslet_core.settings import save, get
+val = '\(value)'
+if val == 'true': val = True
+elif val == 'false': val = False
+save({'\(key)': val})
+"""]
+        process.environment = ["PATH": "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin"]
+        process.standardOutput = Pipe(); process.standardError = Pipe()
+        try? process.run()
     }
 
     // MARK: Model section

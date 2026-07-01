@@ -43,6 +43,29 @@ Context chunks:
 {context}
 """
 
+QA_WITH_HISTORY_PROMPT_TEMPLATE = """You are Lenslet, a personal knowledge assistant for clinicians and learners.
+
+You are in an ongoing conversation. Use the conversation history to understand context and resolve references \
+(e.g. "it", "that condition", "the protocol mentioned earlier"). \
+Answer the current question using the provided memory/context chunks as your knowledge source.
+
+Rules:
+- Ground your answer in the context chunks. Do not invent information.
+- If a follow-up question refers to something from earlier in the conversation, use history to resolve it.
+- If the context is insufficient, say so clearly.
+- Keep the answer concise but clinically useful.
+- When possible, mention the source filename, page, and section.
+
+Conversation so far:
+{history}
+
+Context chunks (retrieved for the current question):
+{context}
+
+Current question:
+{question}
+"""
+
 
 def _generate(prompt: str) -> str:
     backend = _setting("model_backend", "ollama")
@@ -118,7 +141,11 @@ def summarize(text: str) -> str:
     return _generate(PROMPT_TEMPLATE.format(text=text))
 
 
-def answer_from_context(question: str, context_chunks: list[dict]) -> str:
+def answer_from_context(
+    question: str,
+    context_chunks: list[dict],
+    history: list[dict] | None = None,
+) -> str:
     if not question or not question.strip():
         raise ValueError("Cannot answer an empty question.")
     if not context_chunks:
@@ -133,16 +160,36 @@ def answer_from_context(question: str, context_chunks: list[dict]) -> str:
         source_type = chunk.get("source_type") or metadata.get("source_type") or "memory"
         text = chunk.get("text") or ""
 
+        section = chunk.get("section_heading") or metadata.get("section_heading") or ""
         source_line = f"Source {index}: {filename}"
         if page:
             source_line += f", page {page}"
+        if section:
+            source_line += f', section "{section}"'
         source_line += f" ({source_type})"
 
         formatted_chunks.append(f"{source_line}\n{text}")
 
     context = "\n\n---\n\n".join(formatted_chunks)
-    prompt = QA_PROMPT_TEMPLATE.format(
-        question=question.strip(),
-        context=context,
-    )
+
+    if history:
+        history_lines: list[str] = []
+        for turn in history:
+            role = turn.get("role", "")
+            text = turn.get("text", "")
+            if role == "user":
+                history_lines.append(f"User: {text}")
+            elif role == "assistant":
+                history_lines.append(f"Lenslet: {text}")
+        prompt = QA_WITH_HISTORY_PROMPT_TEMPLATE.format(
+            history="\n".join(history_lines),
+            context=context,
+            question=question.strip(),
+        )
+    else:
+        prompt = QA_PROMPT_TEMPLATE.format(
+            question=question.strip(),
+            context=context,
+        )
+
     return _generate(prompt)

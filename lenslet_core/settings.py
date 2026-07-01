@@ -13,6 +13,8 @@ DEFAULTS: dict[str, Any] = {
     "ollama_model": "qwen3:8b",
     "claude_model": "claude-haiku-4-5-20251001",
     "claude_api_key": "",
+    "vision_enabled": False,
+    "vision_ollama_model": "qwen2.5vl:7b",
 }
 
 

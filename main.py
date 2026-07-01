@@ -4,7 +4,7 @@ import argparse
 import json
 
 
-from lenslet_core.pdf_ingest import ingest_pdf
+from lenslet_core.pdf_ingest import ingest_pdf, ingest_pdf_batch
 from lenslet_core.pipeline import run_capture_pipeline, run_text_pipeline
 
 REQUIRED_RESULT_KEYS = {
@@ -42,10 +42,24 @@ def parse_args() -> argparse.Namespace:
     )
 
     parser.add_argument(
+        "--pdf-batch",
+        nargs="+",
+        metavar="PATH",
+        default=None,
+        help="Ingest multiple PDFs or a folder of PDFs.",
+    )
+
+    parser.add_argument(
         "--course",
         type=str,
         default="",
         help="Optional course or project label for PDF ingestion.",
+    )
+
+    parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Re-ingest PDF even if it was already imported.",
     )
 
     parser.add_argument(
@@ -166,6 +180,20 @@ def main() -> int:
         if args.json:
             print(json.dumps(result, ensure_ascii=False, indent=2))
         return 0 if result.get("status") == "success" else 1
+
+    if args.pdf_batch:
+        reports = ingest_pdf_batch(args.pdf_batch, course=args.course, emit_progress=args.json, force=getattr(args, 'force', False))
+        if args.json:
+            print(json.dumps({"status": "success", "reports": reports}, ensure_ascii=False, indent=2))
+        else:
+            total_chunks = sum(int(r.get("chunks_stored", 0)) for r in reports)
+            for r in reports:
+                if r.get("error"):
+                    print(f"✗ {r['filename']}: {r['error']}")
+                else:
+                    print(f"✓ {r['filename']}: {r['chunks_stored']} chunks ({r.get('extraction_methods','')})")
+            print(f"\nTotal: {len(reports)} files, {total_chunks} chunks")
+        return 0
 
     if not args.json:
         if args.pdf:

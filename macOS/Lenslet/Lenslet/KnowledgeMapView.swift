@@ -202,7 +202,7 @@ struct KnowledgeMapView: View {
         return VStack(alignment: .leading, spacing: 0) {
             // Header
             HStack {
-                Text(pn == nil ? "Hover a node" : "Preview")
+                Text(pn == nil ? "Hover on a node" : "Preview")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 Spacer()

@@ -66,6 +66,39 @@ struct LensletResult: Codable {
 }
 
 
+struct BatchPdfIngestResult: Codable {
+    let status: String
+    let reports: [BatchPdfReport]
+
+    struct BatchPdfReport: Codable {
+        let filename: String?
+        let chunks_stored: Int?
+        let error: String?
+        let skipped: Bool?
+        let reason: String?
+        let extraction_methods: String?
+    }
+
+    var displayMessage: String {
+        let total = reports.reduce(0) { $0 + ($1.chunks_stored ?? 0) }
+        let failed = reports.filter { $0.error != nil }
+        let skipped = reports.filter { $0.skipped == true }
+        var lines: [String] = reports.map { r in
+            let name = r.filename ?? "unknown"
+            if let err = r.error { return "✗ \(name): \(err)" }
+            if r.skipped == true { return "⟳ \(name): already imported, skipped" }
+            let chunks = r.chunks_stored ?? 0
+            return "✓ \(name): \(chunks) chunks"
+        }
+        lines.append("")
+        var summary = "Total: \(reports.count) files, \(total) new chunks"
+        if !skipped.isEmpty { summary += ", \(skipped.count) skipped" }
+        if !failed.isEmpty { summary += ", \(failed.count) failed" }
+        lines.append(summary)
+        return lines.joined(separator: "\n")
+    }
+}
+
 struct PdfIngestResult: Codable {
 
     /// Overall ingest status returned by Python.

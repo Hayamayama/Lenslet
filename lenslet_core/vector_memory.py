@@ -68,28 +68,46 @@ def add_document_chunk(
     text: str,
     metadata: dict[str, Any],
 ) -> None:
-    """Insert or update one document chunk in Chroma.
-
-    This is the generic memory entry point for PDF, DOCX, Markdown, browser,
-    clipboard, and future ingestion sources. Source-specific modules should
-    prepare text and metadata, then hand the final chunk to this function.
-    """
+    """Insert or update one document chunk in Chroma."""
     document = (text or "").strip()
     if not document:
         raise ValueError("Cannot add empty document chunk to vector store.")
 
-    safe_metadata = _clean_metadata(
-        {
-            "source_type": "document",
-            **(metadata or {}),
-        }
-    )
-
+    safe_metadata = _clean_metadata({"source_type": "document", **(metadata or {})})
     collection.upsert(
         ids=[str(chunk_id)],
         documents=[document],
         metadatas=[safe_metadata],
     )
+
+
+BATCH_UPSERT_SIZE = 50
+
+
+def add_document_chunks_batch(chunks: list[tuple[str, str, dict[str, Any]]]) -> None:
+    """Batch upsert multiple chunks in one Chroma call.
+
+    Accepts list of (chunk_id, text, metadata). Processes in groups of
+    BATCH_UPSERT_SIZE to avoid memory spikes on very large PDFs.
+    """
+    if not chunks:
+        return
+
+    valid = [
+        (cid, (text or "").strip(), meta)
+        for cid, text, meta in chunks
+        if (text or "").strip()
+    ]
+
+    for i in range(0, len(valid), BATCH_UPSERT_SIZE):
+        batch = valid[i : i + BATCH_UPSERT_SIZE]
+        ids = [cid for cid, _, _ in batch]
+        documents = [text for _, text, _ in batch]
+        metadatas = [
+            _clean_metadata({"source_type": "document", **meta})
+            for _, _, meta in batch
+        ]
+        collection.upsert(ids=ids, documents=documents, metadatas=metadatas)
 
 
 def _tokenize(text: str) -> list[str]:
@@ -176,6 +194,8 @@ def search_related(query: str, n_results: int = 3) -> list[dict[str, Any]]:
             "filename": meta.get("filename", ""),
             "page": meta.get("page"),
             "chunk_index": meta.get("chunk_index"),
+            "section_heading": meta.get("section_heading", ""),
+            "extraction_method": meta.get("extraction_method", ""),
             "distance": id_to_dist.get(cid, 1.0),
             "rrf_score": round(rrf[cid], 6),
             "text": doc[:DOCUMENT_PREVIEW_CHARS],

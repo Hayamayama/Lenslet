@@ -10,6 +10,7 @@ ollama
 # ===== Document Ingestion =====
 markitdown[all]
 pymupdf
+pdfplumber
 watchdog
 
 # ===== Image Processing =====

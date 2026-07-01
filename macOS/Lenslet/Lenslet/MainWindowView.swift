@@ -283,7 +283,23 @@ struct MainWindowView: View {
                         .font(.callout)
                         .fontWeight(.medium)
                         .foregroundStyle(.primary)
+                    if !chatMessages.isEmpty {
+                        Text("\(chatMessages.count / 2) turns")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
                     Spacer()
+                    if !chatMessages.isEmpty {
+                        Button {
+                            chatMessages = []
+                        } label: {
+                            Text("Clear")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        .buttonStyle(.plain)
+                        .onTapGesture { chatMessages = [] }
+                    }
                     Image(systemName: chatPanelOpen ? "chevron.down" : "chevron.up")
                         .font(.caption)
                         .foregroundStyle(.secondary)
@@ -440,7 +456,12 @@ struct MainWindowView: View {
             withAnimation(.easeInOut(duration: 0.18)) { chatPanelOpen = true }
         }
 
-        LensletRuntime.shared.runChatQuery(question: question) { result in
+        // Serialize existing messages as history for the Python backend
+        let history: [[String: String]] = chatMessages.dropLast().map { msg in
+            ["role": msg.role == .user ? "user" : "assistant", "text": msg.text]
+        }
+
+        LensletRuntime.shared.runChatQuery(question: question, history: history) { result in
             isChatLoading = false
             switch result {
             case .success(let response):
@@ -491,6 +512,8 @@ struct MemoryDetailView: View {
     @State private var tags: [String] = []
     @State private var newTagInput = ""
     @State private var isAddingTag = false
+    @State private var isEditingSummary = false
+    @State private var editedSummary = ""
 
     private var formattedDate: String {
         guard let date = memory.createdAt else { return "" }
@@ -507,8 +530,8 @@ struct MemoryDetailView: View {
                 tagEditor
                 actionBar
                 Divider()
-                if let summary = memory.summary {
-                    contentSection("Summary", text: summary)
+                if memory.summary != nil {
+                    summarySection
                 }
                 if let original = memory.originalText {
                     contentSection("Original Capture", text: original)
@@ -519,8 +542,67 @@ struct MemoryDetailView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .background(Color(nsColor: .textBackgroundColor))
-        .onAppear { tags = memory.tags }
-        .onChange(of: memory.id) { _, _ in tags = memory.tags }
+        .onAppear {
+            tags = memory.tags
+            editedSummary = memory.summary ?? ""
+        }
+        .onChange(of: memory.id) { _, _ in
+            tags = memory.tags
+            editedSummary = memory.summary ?? ""
+            isEditingSummary = false
+        }
+    }
+
+    private var summarySection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text("Summary")
+                    .font(.headline)
+                Spacer()
+                if isEditingSummary {
+                    Button("Cancel") {
+                        editedSummary = memory.summary ?? ""
+                        isEditingSummary = false
+                    }
+                    .buttonStyle(.borderless)
+                    .foregroundStyle(.secondary)
+
+                    Button("Save") {
+                        let store = MemoryStore(memoriesDirectory: URL(fileURLWithPath: memory.path).deletingLastPathComponent())
+                        store.saveSummary(editedSummary, for: memory)
+                        isEditingSummary = false
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.small)
+                } else {
+                    Button("Edit") {
+                        editedSummary = memory.summary ?? ""
+                        isEditingSummary = true
+                    }
+                    .buttonStyle(.borderless)
+                    .foregroundStyle(.secondary)
+                    .font(.caption)
+                }
+            }
+
+            if isEditingSummary {
+                TextEditor(text: $editedSummary)
+                    .font(.body)
+                    .frame(minHeight: 120)
+                    .padding(6)
+                    .background(Color(nsColor: .controlBackgroundColor))
+                    .clipShape(RoundedRectangle(cornerRadius: 6))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 6)
+                            .stroke(Color.accentColor.opacity(0.5), lineWidth: 1)
+                    )
+            } else {
+                Text(memory.summary ?? "")
+                    .font(.body)
+                    .textSelection(.enabled)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
     }
 
     private var tagEditor: some View {

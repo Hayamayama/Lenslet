@@ -72,6 +72,27 @@ struct MemoryStore {
         )
     }
 
+    func saveSummary(_ newSummary: String, for memory: LensletMemory) {
+        let fileURL = URL(fileURLWithPath: memory.path)
+        guard var raw = try? String(contentsOf: fileURL, encoding: .utf8) else { return }
+
+        let trimmed = newSummary.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        // Replace content between ## Summary and the next ## heading (or end of file)
+        if let summaryRange = raw.range(of: #"(?m)^## Summary\s*\n"#, options: .regularExpression) {
+            let afterSummary = summaryRange.upperBound
+            // Find next section heading
+            let searchRange = afterSummary..<raw.endIndex
+            if let nextSection = raw.range(of: #"(?m)^## "#, options: .regularExpression, range: searchRange) {
+                raw.replaceSubrange(afterSummary..<nextSection.lowerBound, with: "\(trimmed)\n\n")
+            } else {
+                raw.replaceSubrange(afterSummary..<raw.endIndex, with: "\(trimmed)\n")
+            }
+        }
+
+        try? raw.write(to: fileURL, atomically: true, encoding: .utf8)
+    }
+
     func saveTags(_ tags: [String], for memory: LensletMemory) {
         let fileURL = URL(fileURLWithPath: memory.path)
         guard var raw = try? String(contentsOf: fileURL, encoding: .utf8) else { return }
