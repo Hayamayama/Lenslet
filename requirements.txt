@@ -19,3 +19,6 @@ opencv-python
 # ===== LLM Backends =====
 requests
 anthropic
+
+# ===== Search =====
+rank-bm25
