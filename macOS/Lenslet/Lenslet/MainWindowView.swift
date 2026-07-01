@@ -7,6 +7,8 @@ struct MainWindowView: View {
     @State private var memories: [LensletMemory] = []
     @State private var selectedMemory: LensletMemory?
     @State private var searchText = ""
+    @State private var relatedMemories: [RelatedMemory] = []
+    @State private var isLoadingRelated = false
 
     private let store = MemoryStore()
 
@@ -64,8 +66,15 @@ struct MainWindowView: View {
                 }
         } detail: {
             if let memory = selectedMemory {
-                MemoryDetailView(memory: memory)
-                    .id(memory.id)
+                MemoryDetailView(
+                    memory: memory,
+                    relatedMemories: relatedMemories,
+                    isLoadingRelated: isLoadingRelated,
+                    onSelectRelated: { path in
+                        selectedMemory = memories.first { $0.path == path }
+                    }
+                )
+                .id(memory.id)
             } else {
                 emptyDetail
             }
@@ -75,6 +84,9 @@ struct MainWindowView: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: .lensletMemoryAdded)) { _ in
             reloadMemories()
+        }
+        .onChange(of: selectedMemory) { _, newMemory in
+            loadRelated(for: newMemory)
         }
     }
 
@@ -175,6 +187,27 @@ struct MainWindowView: View {
             selectedMemory = loaded.first
         }
     }
+
+    private func loadRelated(for memory: LensletMemory?) {
+        guard let memory else {
+            relatedMemories = []
+            return
+        }
+        let query = [memory.summary, memory.title]
+            .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+            .joined(separator: " ")
+        guard !query.isEmpty else {
+            relatedMemories = []
+            return
+        }
+        isLoadingRelated = true
+        relatedMemories = []
+        LensletRuntime.shared.searchRelated(query: query, topK: 5) { results in
+            relatedMemories = results.filter { $0.id != memory.id }
+            isLoadingRelated = false
+        }
+    }
 }
 
 // MARK: - Memory Row
@@ -208,6 +241,9 @@ struct MemoryRowView: View {
 
 struct MemoryDetailView: View {
     let memory: LensletMemory
+    var relatedMemories: [RelatedMemory] = []
+    var isLoadingRelated: Bool = false
+    var onSelectRelated: ((String) -> Void)? = nil
 
     private var formattedDate: String {
         guard let date = memory.createdAt else { return "" }
@@ -229,11 +265,45 @@ struct MemoryDetailView: View {
                 if let original = memory.originalText {
                     contentSection("Original Capture", text: original)
                 }
+
+                relatedSection
             }
             .padding(32)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .background(Color(nsColor: .textBackgroundColor))
+    }
+
+    private var relatedSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Divider()
+                .padding(.vertical, 4)
+
+            Text("Related Memories")
+                .font(.headline)
+                .foregroundStyle(.secondary)
+
+            if isLoadingRelated {
+                HStack(spacing: 8) {
+                    ProgressView().controlSize(.small)
+                    Text("Searching…")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                }
+            } else if relatedMemories.isEmpty {
+                Text("No related memories found.")
+                    .font(.callout)
+                    .foregroundStyle(.tertiary)
+            } else {
+                ForEach(relatedMemories, id: \.id) { related in
+                    RelatedMemoryCard(related: related, onSelect: {
+                        if !related.path.isEmpty {
+                            onSelectRelated?(related.path)
+                        }
+                    })
+                }
+            }
+        }
     }
 
     private var headerSection: some View {
@@ -299,6 +369,80 @@ struct MemoryDetailView: View {
             .replacingOccurrences(of: "**", with: "")
             .replacingOccurrences(of: "---", with: "")
             .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+}
+
+// MARK: - Related Memory Card
+
+struct RelatedMemoryCard: View {
+    let related: RelatedMemory
+    let onSelect: () -> Void
+
+    private var title: String {
+        if let filename = related.filename, !filename.isEmpty {
+            return filename
+        }
+        let url = URL(fileURLWithPath: related.path)
+        let stem = url.deletingPathExtension().lastPathComponent
+        return stem.isEmpty ? related.id : stem
+    }
+
+    private var matchPercent: Int {
+        max(0, min(100, Int((1.0 - related.distance) * 100)))
+    }
+
+    private var sourceLabel: String {
+        switch related.source_type {
+        case "pdf", "document": return "PDF"
+        default: return "Capture"
+        }
+    }
+
+    var body: some View {
+        Button(action: onSelect) {
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(alignment: .firstTextBaseline) {
+                    Text(title)
+                        .font(.callout)
+                        .fontWeight(.medium)
+                        .lineLimit(1)
+                        .foregroundStyle(.primary)
+
+                    Spacer()
+
+                    Text("\(matchPercent)% match")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+
+                HStack(spacing: 6) {
+                    Text(sourceLabel)
+                        .font(.caption2)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(Color.secondary.opacity(0.12))
+                        .clipShape(RoundedRectangle(cornerRadius: 4))
+
+                    if let page = related.page {
+                        Text("p.\(page)")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+
+                if !related.text.isEmpty {
+                    Text(related.text)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(3)
+                }
+            }
+            .padding(12)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Color(nsColor: .controlBackgroundColor))
+            .clipShape(RoundedRectangle(cornerRadius: 10))
+        }
+        .buttonStyle(.plain)
     }
 }
 

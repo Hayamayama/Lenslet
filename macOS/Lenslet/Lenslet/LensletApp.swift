@@ -645,6 +645,45 @@ final class LensletRuntime {
     }
 }
 
+    // MARK: Related memory search
+
+    func searchRelated(query: String, topK: Int = 5, completion: @escaping ([RelatedMemory]) -> Void) {
+        let projectURL = projectURL
+        let pythonURL = projectURL.appendingPathComponent(".venv/bin/python")
+
+        guard FileManager.default.fileExists(atPath: pythonURL.path) else {
+            completion([])
+            return
+        }
+
+        let outputPipe = Pipe()
+        let process = Process()
+        process.currentDirectoryURL = projectURL
+        process.executableURL = pythonURL
+        process.arguments = ["main.py", "--json", "--search", query, "--top-k", String(topK)]
+        process.environment = [
+            "PATH": "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin",
+            "PYTHONPATH": projectURL.path
+        ]
+        process.standardOutput = outputPipe
+        process.standardError = Pipe()
+
+        process.terminationHandler = { _ in
+            let data = outputPipe.fileHandleForReading.readDataToEndOfFile()
+            DispatchQueue.main.async {
+                struct SearchResult: Codable {
+                    let status: String
+                    let related: [RelatedMemory]?
+                }
+                let related = (try? JSONDecoder().decode(SearchResult.self, from: data))?.related ?? []
+                completion(related)
+            }
+        }
+
+        try? process.run()
+    }
+}
+
 // MARK: - Document models
 
 struct DocumentListResult: Codable {

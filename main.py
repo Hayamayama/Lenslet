@@ -4,6 +4,7 @@ import argparse
 import json
 
 
+from lenslet_core.pdf_ingest import ingest_pdf
 from lenslet_core.pipeline import run_capture_pipeline
 
 REQUIRED_RESULT_KEYS = {
@@ -33,16 +34,88 @@ def parse_args() -> argparse.Namespace:
         help="Use an existing image instead of capturing the screen.",
     )
 
+    parser.add_argument(
+        "--pdf",
+        type=str,
+        default=None,
+        help="Ingest a PDF into Lenslet memory instead of capturing the screen.",
+    )
+
+    parser.add_argument(
+        "--course",
+        type=str,
+        default="",
+        help="Optional course or project label for PDF ingestion.",
+    )
+
+    parser.add_argument(
+        "--search",
+        type=str,
+        default=None,
+        help="Search related memories by query text and return JSON.",
+    )
+
+    parser.add_argument(
+        "--top-k",
+        type=int,
+        default=5,
+        help="Number of related memories to return for --search.",
+    )
+
     return parser.parse_args()
 
 
 def main() -> int:
     args = parse_args()
 
+    if args.search:
+        from lenslet_core.vector_memory import search_related
+        related = search_related(args.search.strip(), n_results=args.top_k)
+        if args.json:
+            print(
+                json.dumps(
+                    {"status": "success", "related": related},
+                    ensure_ascii=False,
+                    indent=2,
+                )
+            )
+        else:
+            for item in related:
+                print(f"- {item.get('path', '')}  distance={item.get('distance', 0):.4f}")
+                print(item.get("text", "")[:200])
+                print()
+        return 0
+
     if not args.json:
-        print("📸 Capture something")
+        if args.pdf:
+            print("📄 Ingest PDF")
+        else:
+            print("📸 Capture something")
 
     try:
+        if args.pdf:
+            result = ingest_pdf(
+                args.pdf,
+                course=args.course,
+            )
+
+            if args.json:
+                print(
+                    json.dumps(
+                        {
+                            "status": "success",
+                            **result,
+                        },
+                        ensure_ascii=False,
+                        indent=2,
+                    )
+                )
+                return 0
+
+            print(f"Stored {result['chunks_stored']} chunks from {result['filename']}")
+            print(f"needs_ocr={result['needs_ocr']}")
+            return 0
+
         result = run_capture_pipeline(
             image_path=args.image,
         )
