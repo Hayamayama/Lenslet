@@ -62,11 +62,62 @@ def parse_args() -> argparse.Namespace:
         help="Number of related memories to return for --search.",
     )
 
+    parser.add_argument(
+        "--stats",
+        action="store_true",
+        help="Return memory and vector DB stats as JSON.",
+    )
+
     return parser.parse_args()
 
 
 def main() -> int:
     args = parse_args()
+
+    if args.stats:
+        from collections import defaultdict
+        from pathlib import Path as _Path
+        from lenslet_core.vector_memory import collection
+
+        project_root = _Path(__file__).resolve().parent
+        memories_dir = project_root / "memories"
+        memory_count = len(list(memories_dir.glob("*.md"))) if memories_dir.exists() else 0
+
+        results = collection.get(include=["metadatas"])
+        metadatas = results.get("metadatas") or []
+
+        screenshot_chunks = sum(
+            1 for m in metadatas
+            if (m or {}).get("source_type") not in ("pdf", "document")
+        )
+        document_chunks = sum(
+            1 for m in metadatas
+            if (m or {}).get("source_type") in ("pdf", "document")
+        )
+
+        doc_counts: dict = defaultdict(int)
+        for m in metadatas:
+            m = m or {}
+            if m.get("source_type") in ("pdf", "document"):
+                filename = m.get("filename") or m.get("path") or "Unknown"
+                doc_counts[filename] += 1
+
+        documents = [
+            {"filename": k, "chunk_count": v}
+            for k, v in sorted(doc_counts.items())
+        ]
+
+        stats = {
+            "status": "success",
+            "memory_count": memory_count,
+            "chunk_count": len(metadatas),
+            "screenshot_chunks": screenshot_chunks,
+            "document_chunks": document_chunks,
+            "documents": documents,
+        }
+
+        print(json.dumps(stats, ensure_ascii=False, indent=2))
+        return 0
 
     if args.search:
         from lenslet_core.vector_memory import search_related

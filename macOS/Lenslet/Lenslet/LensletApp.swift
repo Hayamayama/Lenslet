@@ -763,6 +763,10 @@ struct LensletApp: App {
         }
         .defaultSize(width: 1100, height: 720)
 
+        Settings {
+            SettingsView()
+        }
+
         MenuBarExtra("Lenslet", systemImage: "eye") {
             MenuBarView()
         }

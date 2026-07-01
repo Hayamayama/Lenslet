@@ -10,3 +10,24 @@ pymupdf
 ollama
 numpy
 opencv-python
+# ===== macOS Native =====
+pyobjc-framework-Vision
+pyobjc-framework-Quartz
+
+# ===== Core Memory / Vector Store =====
+chromadb
+numpy
+ollama
+
+# ===== Document Ingestion =====
+markitdown[all]
+pymupdf
+watchdog
+
+# ===== Image Processing =====
+pillow
+opencv-python
+
+# ===== Utilities =====
+requests
+anthropic
