@@ -71,6 +71,7 @@ struct SettingsView: View {
 
     var body: some View {
         Form {
+            projectSection
             modelSection
             memorySection
             vectorDBSection
@@ -85,6 +86,39 @@ struct SettingsView: View {
         .onChange(of: settings.modelBackend) { _, _ in settings.save() }
         .onChange(of: settings.ollamaModel)  { _, _ in settings.save() }
         .onChange(of: settings.claudeModel)  { _, _ in settings.save() }
+    }
+
+    // MARK: Project section
+
+    private var projectSection: some View {
+        Section("Project") {
+            let saved = UserDefaults.standard.string(forKey: "projectRoot") ?? ""
+            let current = LensletRuntime.shared.projectURL.path
+
+            LabeledContent("Project folder") {
+                Text(current)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            }
+
+            Button("Change folder…") {
+                LensletRuntime.shared.promptForProjectFolder()
+            }
+            .buttonStyle(.borderless)
+
+            if !saved.isEmpty {
+                Button("Clear saved path", role: .destructive) {
+                    UserDefaults.standard.removeObject(forKey: "projectRoot")
+                }
+                .buttonStyle(.borderless)
+            }
+
+            Text("The folder that contains main.py and .venv. Change this if you moved the project.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
     }
 
     // MARK: Model section

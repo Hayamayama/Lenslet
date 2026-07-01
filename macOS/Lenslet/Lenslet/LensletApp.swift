@@ -90,15 +90,44 @@ final class LensletRuntime {
     }
 
     var projectURL: URL {
+        // 1. Explicit env var (dev / CI override)
         if let envPath = ProcessInfo.processInfo.environment["LENSLET_PROJECT_ROOT"], !envPath.isEmpty {
             return URL(fileURLWithPath: envPath)
         }
-        let homeProjectURL = URL(fileURLWithPath: NSHomeDirectory())
-            .appendingPathComponent("Documents/04_Research_Dev/VSC/Lenslet")
-        if FileManager.default.fileExists(atPath: homeProjectURL.appendingPathComponent("main.py").path) {
-            return homeProjectURL
+        // 2. User-configured path (saved via Settings or first-run picker)
+        if let saved = UserDefaults.standard.string(forKey: "projectRoot"), !saved.isEmpty {
+            let url = URL(fileURLWithPath: saved)
+            if FileManager.default.fileExists(atPath: url.appendingPathComponent("main.py").path) {
+                return url
+            }
         }
-        return URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+        // 3. Legacy hardcoded fallback — valid path wins, avoids breaking existing setups
+        let legacy = URL(fileURLWithPath: NSHomeDirectory())
+            .appendingPathComponent("Documents/04_Research_Dev/VSC/Lenslet")
+        if FileManager.default.fileExists(atPath: legacy.appendingPathComponent("main.py").path) {
+            return legacy
+        }
+        // 4. Nothing found — return home so callers can detect missing main.py and prompt user
+        return URL(fileURLWithPath: NSHomeDirectory())
+    }
+
+    func promptForProjectFolder() {
+        let panel = NSOpenPanel()
+        panel.title = "Select the Lenslet project folder"
+        panel.message = "Choose the folder that contains main.py and .venv"
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.allowsMultipleSelection = false
+        panel.prompt = "Select"
+
+        if panel.runModal() == .OK, let url = panel.url {
+            let mainPy = url.appendingPathComponent("main.py")
+            if FileManager.default.fileExists(atPath: mainPy.path) {
+                UserDefaults.standard.set(url.path, forKey: "projectRoot")
+            } else {
+                showErrorWindow("That folder doesn't contain main.py.\n\nPlease select the root Lenslet project folder.")
+            }
+        }
     }
 
     // MARK: Capture
@@ -109,7 +138,7 @@ final class LensletRuntime {
         let mainURL = projectURL.appendingPathComponent("main.py")
 
         guard FileManager.default.fileExists(atPath: mainURL.path) else {
-            showErrorWindow("Lenslet project root not found.\n\nExpected main.py at:\n\(mainURL.path)\n\nSet LENSLET_PROJECT_ROOT if the project moved.")
+            promptForProjectFolder()
             return
         }
         guard FileManager.default.fileExists(atPath: pythonURL.path) else {
@@ -180,7 +209,7 @@ final class LensletRuntime {
         let mainURL = projectURL.appendingPathComponent("main.py")
 
         guard FileManager.default.fileExists(atPath: mainURL.path) else {
-            showErrorWindow("Lenslet project root not found.\n\nExpected main.py at:\n\(mainURL.path)\n\nSet LENSLET_PROJECT_ROOT if the project moved.")
+            promptForProjectFolder()
             return
         }
         guard FileManager.default.fileExists(atPath: pythonURL.path) else {
@@ -258,7 +287,7 @@ final class LensletRuntime {
         let mainURL = projectURL.appendingPathComponent("main.py")
 
         guard FileManager.default.fileExists(atPath: mainURL.path) else {
-            showErrorWindow("Lenslet project root not found.\n\nExpected main.py at:\n\(mainURL.path)\n\nSet LENSLET_PROJECT_ROOT if the project moved.")
+            promptForProjectFolder()
             return
         }
         guard FileManager.default.fileExists(atPath: pythonURL.path) else {
@@ -308,7 +337,7 @@ final class LensletRuntime {
         let mainURL = projectURL.appendingPathComponent("main.py")
 
         guard FileManager.default.fileExists(atPath: mainURL.path) else {
-            showErrorWindow("Lenslet project root not found.\n\nExpected main.py at:\n\(mainURL.path)\n\nSet LENSLET_PROJECT_ROOT if the project moved.")
+            promptForProjectFolder()
             return
         }
         guard FileManager.default.fileExists(atPath: pythonURL.path) else {
