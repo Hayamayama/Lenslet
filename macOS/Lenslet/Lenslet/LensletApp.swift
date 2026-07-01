@@ -645,6 +645,50 @@ final class LensletRuntime {
     }
 }
 
+    // MARK: Chat query
+
+    func runChatQuery(question: String, completion: @escaping (Result<LensletQueryResult, Error>) -> Void) {
+        let projectURL = projectURL
+        let pythonURL = projectURL.appendingPathComponent(".venv/bin/python")
+
+        guard FileManager.default.fileExists(atPath: pythonURL.path) else {
+            completion(.failure(NSError(domain: "Lenslet", code: 1, userInfo: [NSLocalizedDescriptionKey: "Python venv not found."])))
+            return
+        }
+
+        let outputPipe = Pipe()
+        let errorPipe = Pipe()
+        let process = Process()
+        process.currentDirectoryURL = projectURL
+        process.executableURL = pythonURL
+        process.arguments = ["-m", "lenslet_core.query", question, "--json"]
+        process.environment = [
+            "PATH": "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin",
+            "PYTHONPATH": projectURL.path
+        ]
+        process.standardOutput = outputPipe
+        process.standardError = errorPipe
+
+        process.terminationHandler = { _ in
+            let data = outputPipe.fileHandleForReading.readDataToEndOfFile()
+            DispatchQueue.main.async {
+                do {
+                    let result = try JSONDecoder().decode(LensletQueryResult.self, from: data)
+                    completion(.success(result))
+                } catch {
+                    let raw = String(data: data, encoding: .utf8) ?? ""
+                    let errData = errorPipe.fileHandleForReading.readDataToEndOfFile()
+                    let stderr = String(data: errData, encoding: .utf8) ?? ""
+                    completion(.failure(NSError(domain: "Lenslet", code: 2, userInfo: [
+                        NSLocalizedDescriptionKey: "Failed to decode response.\n\(raw)\n\(stderr)"
+                    ])))
+                }
+            }
+        }
+
+        try? process.run()
+    }
+
     // MARK: Related memory search
 
     func searchRelated(query: String, topK: Int = 5, completion: @escaping ([RelatedMemory]) -> Void) {

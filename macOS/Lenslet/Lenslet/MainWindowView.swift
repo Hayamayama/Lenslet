@@ -1,6 +1,15 @@
 import SwiftUI
 import AppKit
 
+// MARK: - Chat message model
+
+struct ChatMessage: Identifiable {
+    enum Role { case user, assistant }
+    let id = UUID()
+    let role: Role
+    let text: String
+}
+
 // MARK: - Main Window
 
 struct MainWindowView: View {
@@ -9,6 +18,11 @@ struct MainWindowView: View {
     @State private var searchText = ""
     @State private var relatedMemories: [RelatedMemory] = []
     @State private var isLoadingRelated = false
+
+    @State private var chatMessages: [ChatMessage] = []
+    @State private var chatInput = ""
+    @State private var isChatLoading = false
+    @State private var chatPanelOpen = false
 
     private let store = MemoryStore()
 
@@ -56,32 +70,35 @@ struct MainWindowView: View {
                 .navigationSplitViewColumnWidth(min: 220, ideal: 260, max: 340)
                 .toolbar {
                     ToolbarItem(placement: .primaryAction) {
-                        Button {
-                            reloadMemories()
-                        } label: {
+                        Button { reloadMemories() } label: {
                             Image(systemName: "arrow.clockwise")
                         }
                         .help("Reload memories")
                     }
                 }
         } detail: {
-            if let memory = selectedMemory {
-                MemoryDetailView(
-                    memory: memory,
-                    relatedMemories: relatedMemories,
-                    isLoadingRelated: isLoadingRelated,
-                    onSelectRelated: { path in
-                        selectedMemory = memories.first { $0.path == path }
+            VStack(spacing: 0) {
+                Group {
+                    if let memory = selectedMemory {
+                        MemoryDetailView(
+                            memory: memory,
+                            relatedMemories: relatedMemories,
+                            isLoadingRelated: isLoadingRelated,
+                            onSelectRelated: { path in
+                                selectedMemory = memories.first { $0.path == path }
+                            }
+                        )
+                        .id(memory.id)
+                    } else {
+                        emptyDetail
                     }
-                )
-                .id(memory.id)
-            } else {
-                emptyDetail
+                }
+                .frame(maxHeight: .infinity)
+
+                chatPanel
             }
         }
-        .onAppear {
-            reloadMemories()
-        }
+        .onAppear { reloadMemories() }
         .onReceive(NotificationCenter.default.publisher(for: .lensletMemoryAdded)) { _ in
             reloadMemories()
         }
@@ -175,6 +192,137 @@ struct MainWindowView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
+    // MARK: Chat panel
+
+    private var chatPanel: some View {
+        VStack(spacing: 0) {
+            Divider()
+
+            // Header — always visible, toggles panel
+            Button {
+                withAnimation(.easeInOut(duration: 0.18)) {
+                    chatPanelOpen.toggle()
+                }
+            } label: {
+                HStack(spacing: 8) {
+                    Image(systemName: "message.circle")
+                        .foregroundStyle(.secondary)
+                        .font(.callout)
+                    Text("Ask Lenslet")
+                        .font(.callout)
+                        .fontWeight(.medium)
+                        .foregroundStyle(.primary)
+                    Spacer()
+                    Image(systemName: chatPanelOpen ? "chevron.down" : "chevron.up")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                .padding(.horizontal, 14)
+                .frame(height: 36)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .background(Color(nsColor: .windowBackgroundColor))
+
+            if chatPanelOpen {
+                Divider()
+                chatMessageList
+                Divider()
+                chatInputBar
+            }
+        }
+        .background(Color(nsColor: .windowBackgroundColor))
+    }
+
+    private var chatMessageList: some View {
+        ScrollViewReader { proxy in
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 10) {
+                    ForEach(chatMessages) { msg in
+                        chatBubble(msg)
+                    }
+                    if isChatLoading {
+                        chatLoadingBubble
+                    }
+                    Color.clear.frame(height: 1).id("bottom")
+                }
+                .padding(12)
+            }
+            .frame(height: 180)
+            .onChange(of: chatMessages.count) { _, _ in
+                withAnimation { proxy.scrollTo("bottom") }
+            }
+            .onChange(of: isChatLoading) { _, _ in
+                withAnimation { proxy.scrollTo("bottom") }
+            }
+        }
+    }
+
+    private func chatBubble(_ message: ChatMessage) -> some View {
+        HStack {
+            if message.role == .user { Spacer(minLength: 48) }
+
+            Text(message.text)
+                .font(.callout)
+                .lineSpacing(3)
+                .textSelection(.enabled)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                .background(
+                    message.role == .user
+                        ? Color.accentColor
+                        : Color(nsColor: .controlBackgroundColor)
+                )
+                .foregroundStyle(
+                    message.role == .user
+                        ? Color.white
+                        : Color.primary
+                )
+                .clipShape(
+                    RoundedRectangle(cornerRadius: 12)
+                )
+
+            if message.role == .assistant { Spacer(minLength: 48) }
+        }
+    }
+
+    private var chatLoadingBubble: some View {
+        HStack(spacing: 6) {
+            ProgressView().controlSize(.mini)
+            Text("Searching memory…")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(Color(nsColor: .controlBackgroundColor))
+        .clipShape(RoundedRectangle(cornerRadius: 12))
+    }
+
+    private var chatInputBar: some View {
+        HStack(spacing: 8) {
+            TextField("Ask Lenslet…", text: $chatInput)
+                .textFieldStyle(.plain)
+                .font(.callout)
+                .onSubmit { sendChatMessage() }
+
+            Button(action: sendChatMessage) {
+                Image(systemName: "arrow.up.circle.fill")
+                    .font(.title3)
+                    .foregroundStyle(
+                        chatInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isChatLoading
+                            ? Color.secondary
+                            : Color.accentColor
+                    )
+            }
+            .buttonStyle(.plain)
+            .disabled(chatInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isChatLoading)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(Color(nsColor: .windowBackgroundColor))
+    }
+
     // MARK: Data
 
     private func reloadMemories() {
@@ -206,6 +354,29 @@ struct MainWindowView: View {
         LensletRuntime.shared.searchRelated(query: query, topK: 5) { results in
             relatedMemories = results.filter { $0.id != memory.id }
             isLoadingRelated = false
+        }
+    }
+
+    private func sendChatMessage() {
+        let question = chatInput.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !question.isEmpty, !isChatLoading else { return }
+
+        chatInput = ""
+        chatMessages.append(ChatMessage(role: .user, text: question))
+        isChatLoading = true
+
+        if !chatPanelOpen {
+            withAnimation(.easeInOut(duration: 0.18)) { chatPanelOpen = true }
+        }
+
+        LensletRuntime.shared.runChatQuery(question: question) { result in
+            isChatLoading = false
+            switch result {
+            case .success(let response):
+                chatMessages.append(ChatMessage(role: .assistant, text: response.answer))
+            case .failure:
+                chatMessages.append(ChatMessage(role: .assistant, text: "Something went wrong. Check that Ollama is running."))
+            }
         }
     }
 }
@@ -265,45 +436,12 @@ struct MemoryDetailView: View {
                 if let original = memory.originalText {
                     contentSection("Original Capture", text: original)
                 }
-
                 relatedSection
             }
             .padding(32)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .background(Color(nsColor: .textBackgroundColor))
-    }
-
-    private var relatedSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Divider()
-                .padding(.vertical, 4)
-
-            Text("Related Memories")
-                .font(.headline)
-                .foregroundStyle(.secondary)
-
-            if isLoadingRelated {
-                HStack(spacing: 8) {
-                    ProgressView().controlSize(.small)
-                    Text("Searching…")
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
-                }
-            } else if relatedMemories.isEmpty {
-                Text("No related memories found.")
-                    .font(.callout)
-                    .foregroundStyle(.tertiary)
-            } else {
-                ForEach(relatedMemories, id: \.id) { related in
-                    RelatedMemoryCard(related: related, onSelect: {
-                        if !related.path.isEmpty {
-                            onSelectRelated?(related.path)
-                        }
-                    })
-                }
-            }
-        }
     }
 
     private var headerSection: some View {
@@ -364,6 +502,38 @@ struct MemoryDetailView: View {
         }
     }
 
+    private var relatedSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Divider()
+                .padding(.vertical, 4)
+
+            Text("Related Memories")
+                .font(.headline)
+                .foregroundStyle(.secondary)
+
+            if isLoadingRelated {
+                HStack(spacing: 8) {
+                    ProgressView().controlSize(.small)
+                    Text("Searching…")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                }
+            } else if relatedMemories.isEmpty {
+                Text("No related memories found.")
+                    .font(.callout)
+                    .foregroundStyle(.tertiary)
+            } else {
+                ForEach(relatedMemories, id: \.id) { related in
+                    RelatedMemoryCard(related: related, onSelect: {
+                        if !related.path.isEmpty {
+                            onSelectRelated?(related.path)
+                        }
+                    })
+                }
+            }
+        }
+    }
+
     private func cleaned(_ text: String) -> String {
         text
             .replacingOccurrences(of: "**", with: "")
@@ -379,9 +549,7 @@ struct RelatedMemoryCard: View {
     let onSelect: () -> Void
 
     private var title: String {
-        if let filename = related.filename, !filename.isEmpty {
-            return filename
-        }
+        if let filename = related.filename, !filename.isEmpty { return filename }
         let url = URL(fileURLWithPath: related.path)
         let stem = url.deletingPathExtension().lastPathComponent
         return stem.isEmpty ? related.id : stem
@@ -407,9 +575,7 @@ struct RelatedMemoryCard: View {
                         .fontWeight(.medium)
                         .lineLimit(1)
                         .foregroundStyle(.primary)
-
                     Spacer()
-
                     Text("\(matchPercent)% match")
                         .font(.caption2)
                         .foregroundStyle(.secondary)
