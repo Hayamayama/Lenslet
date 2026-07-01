@@ -5,7 +5,7 @@ import json
 
 
 from lenslet_core.pdf_ingest import ingest_pdf
-from lenslet_core.pipeline import run_capture_pipeline
+from lenslet_core.pipeline import run_capture_pipeline, run_text_pipeline
 
 REQUIRED_RESULT_KEYS = {
     "status",
@@ -66,6 +66,13 @@ def parse_args() -> argparse.Namespace:
         "--stats",
         action="store_true",
         help="Return memory and vector DB stats as JSON.",
+    )
+
+    parser.add_argument(
+        "--text-file",
+        type=str,
+        default=None,
+        help="Process raw text from a file instead of capturing the screen (clipboard flow).",
     )
 
     return parser.parse_args()
@@ -136,6 +143,17 @@ def main() -> int:
                 print(item.get("text", "")[:200])
                 print()
         return 0
+
+    if args.text_file:
+        from pathlib import Path as _Path
+        try:
+            text = _Path(args.text_file).read_text(encoding="utf-8")
+            result = run_text_pipeline(text)
+        except Exception as exc:
+            result = {"status": "error", "error": str(exc)}
+        if args.json:
+            print(json.dumps(result, ensure_ascii=False, indent=2))
+        return 0 if result.get("status") == "success" else 1
 
     if not args.json:
         if args.pdf:

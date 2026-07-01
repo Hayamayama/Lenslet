@@ -32,6 +32,9 @@ struct LensletMemory: Identifiable, Codable, Hashable {
 
     /// Optional creation date parsed from memory markdown metadata.
     let createdAt: Date?
+
+    /// User-assigned tags for manual classification.
+    var tags: [String]
 }
 
 
@@ -245,7 +248,8 @@ struct RelatedMemory: Codable, Hashable {
             summary: nil,
             originalText: text,
             source: source_type,
-            createdAt: nil
+            createdAt: nil,
+            tags: []
         )
     }
 }
