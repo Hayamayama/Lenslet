@@ -1,11 +1,12 @@
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from typing import Any
 
 from lenslet_core.capture import capture_screen
 from lenslet_core.ocr import extract_text
-from lenslet_core.llm import summarize
+from lenslet_core.llm import summarize_with_tags
 from lenslet_core.memory import save_memory
 from lenslet_core.vector_memory import add_memory, search_related
 
@@ -27,10 +28,16 @@ def run_text_pipeline(text: str) -> dict[str, Any]:
     if not text or not text.strip():
         return _error_result("Input text is empty.")
 
+    source_app = os.environ.get("LENSLET_SOURCE_APP", "")
+    source_url = os.environ.get("LENSLET_SOURCE_URL", "")
+
     try:
-        summary = summarize(text)
+        summary, tags = summarize_with_tags(text)
         related = search_related(summary, n_results=3)
-        memory_path = save_memory(ocr_text=text, summary=summary)
+        memory_path = save_memory(
+            ocr_text=text, summary=summary, tags=tags, source="clipboard",
+            source_app=source_app, source_url=source_url,
+        )
         memory_id = memory_path.stem
         add_memory(memory_id=memory_id, text=text, summary=summary, path=memory_path)
 
@@ -39,6 +46,7 @@ def run_text_pipeline(text: str) -> dict[str, Any]:
             "image_path": None,
             "ocr": text,
             "summary": summary,
+            "tags": tags,
             "memory_path": str(memory_path),
             "related": related,
             "error": None,
@@ -64,6 +72,9 @@ def run_capture_pipeline(
     Returns a JSON-serializable dictionary for Swift / CLI callers.
     """
 
+    source_app = os.environ.get("LENSLET_SOURCE_APP", "")
+    source_url = os.environ.get("LENSLET_SOURCE_URL", "")
+
     if image_path is None:
         image_path = capture_screen()
     else:
@@ -75,13 +86,17 @@ def run_capture_pipeline(
         return _error_result("OCR produced no text.", image_path)
 
     try:
-        summary = summarize(ocr_text)
+        summary, tags = summarize_with_tags(ocr_text)
 
         related = search_related(summary, n_results=3)
 
         memory_path = save_memory(
             ocr_text=ocr_text,
             summary=summary,
+            tags=tags,
+            source="screen_capture",
+            source_app=source_app,
+            source_url=source_url,
         )
 
         memory_id = memory_path.stem
@@ -98,6 +113,7 @@ def run_capture_pipeline(
             "image_path": str(Path(image_path)),
             "ocr": ocr_text,
             "summary": summary,
+            "tags": tags,
             "memory_path": str(memory_path),
             "related": related,
             "error": None,

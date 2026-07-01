@@ -470,6 +470,37 @@ def extract_pdf_chunks(
     return chunks
 
 
+def _auto_tag_pdf(path: Path, chunks: list[PdfChunk]) -> list[str]:
+    """Ask the LLM to classify this PDF into one of the fixed tag categories."""
+    try:
+        from lenslet_core.llm import ALLOWED_TAGS, _generate
+
+        # Sample: filename + first 600 chars of extracted text
+        sample_text = " ".join(c.text for c in chunks[:3])[:600]
+        prompt = f"""You are classifying a document for a personal knowledge system.
+
+Choose 1 to 2 tags from this fixed list only: {ALLOWED_TAGS}
+- 學習: medicine, physical therapy, rehabilitation, anatomy, pharmacology, clinical practice, academic or professional study.
+- 生活: daily life, personal errands, household, food, travel, finance.
+- 興趣: hobbies, sports, entertainment, music, art, personal projects unrelated to work.
+
+Document filename: {path.name}
+Document sample:
+{sample_text}
+
+Respond with ONLY a JSON array, e.g. ["學習"] or ["生活","興趣"]. No other text."""
+
+        import json as _json, re as _re
+        raw = _generate(prompt)
+        match = _re.search(r'\[.*?\]', raw, _re.DOTALL)
+        if match:
+            tags = _json.loads(match.group())
+            return [t for t in tags if t in ALLOWED_TAGS]
+    except Exception:
+        pass
+    return ["學習"]  # safe default for academic/clinical context
+
+
 def ingest_pdf(
     pdf_path: str | Path,
     *,
@@ -499,12 +530,18 @@ def ingest_pdf(
         progress_callback=progress_callback,
     )
 
+    # Auto-tag: sample filename + first ~600 chars of text for LLM classification
+    auto_tags = _auto_tag_pdf(path, chunks)
+
     method_counts: dict[str, int] = {}
     batch: list[tuple[str, str, dict]] = []
     for chunk in chunks:
         m = str(chunk.metadata.get("extraction_method", "text"))
         method_counts[m] = method_counts.get(m, 0) + 1
-        batch.append((chunk.chunk_id, chunk.text, chunk.metadata))
+        meta = dict(chunk.metadata)
+        if auto_tags:
+            meta["tags"] = ", ".join(auto_tags)
+        batch.append((chunk.chunk_id, chunk.text, meta))
 
     add_document_chunks_batch(batch)
 
@@ -513,6 +550,7 @@ def ingest_pdf(
         "filename": path.name,
         "course": course,
         "chunks_stored": len(chunks),
+        "tags": auto_tags,
         "extraction_methods": json.dumps(method_counts),
     }
 

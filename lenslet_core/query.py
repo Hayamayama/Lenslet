@@ -32,6 +32,7 @@ def query_memory(
     *,
     top_k: int = DEFAULT_TOP_K,
     history: list[dict] | None = None,
+    tag_filter: str | None = None,
 ) -> dict[str, Any]:
     """Search Lenslet memory and answer the question from retrieved chunks."""
     if not question or not question.strip():
@@ -43,7 +44,7 @@ def query_memory(
 
     # Enrich the retrieval query with conversation context
     retrieval_query = _build_retrieval_query(question.strip(), history)
-    related = search_related(retrieval_query, n_results=top_k)
+    related = search_related(retrieval_query, n_results=top_k, tag_filter=tag_filter)
 
     if not related:
         return {
@@ -145,6 +146,12 @@ def _build_parser() -> argparse.ArgumentParser:
         default=None,
         help="Path to a JSON file containing conversation history [{role, text}, ...].",
     )
+    parser.add_argument(
+        "--tag",
+        type=str,
+        default=None,
+        help="Restrict search to memories with this tag (e.g. 學習).",
+    )
     return parser
 
 
@@ -175,7 +182,7 @@ def main() -> int:
         except Exception:
             history = []
 
-    result = query_memory(args.question, top_k=args.top_k, history=history)
+    result = query_memory(args.question, top_k=args.top_k, history=history, tag_filter=args.tag)
 
     if args.json:
         print(json.dumps(result, ensure_ascii=False, indent=2))

@@ -115,7 +115,7 @@ def _tokenize(text: str) -> list[str]:
     return re.findall(r'\b[a-z0-9]+\b', text.lower())
 
 
-def search_related(query: str, n_results: int = 3) -> list[dict[str, Any]]:
+def search_related(query: str, n_results: int = 3, tag_filter: str | None = None) -> list[dict[str, Any]]:
     if not query or not query.strip():
         return []
 
@@ -123,7 +123,9 @@ def search_related(query: str, n_results: int = 3) -> list[dict[str, Any]]:
 
     # ── 1. Fetch full corpus for BM25 ──────────────────────────────────────
     try:
-        corpus = collection.get(include=["documents", "metadatas"])
+        # Apply tag filter at Chroma level when specified
+        where = {"tags": {"$contains": tag_filter}} if tag_filter else None
+        corpus = collection.get(include=["documents", "metadatas"], where=where)
     except Exception:
         return []
 
@@ -146,7 +148,11 @@ def search_related(query: str, n_results: int = 3) -> list[dict[str, Any]]:
     # ── 3. Vector ranking ──────────────────────────────────────────────────
     k_candidates = min(len(all_ids), max(safe_n_results * 6, 20))
     try:
-        vec_results = collection.query(query_texts=[query], n_results=k_candidates)
+        vec_results = collection.query(
+            query_texts=[query],
+            n_results=k_candidates,
+            where=where,
+        )
     except Exception:
         vec_results = {"ids": [[]], "metadatas": [[]], "distances": [[]], "documents": [[]]}
 

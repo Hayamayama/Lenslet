@@ -20,6 +20,8 @@ def save_memory(
     summary: str,
     tags: list[str] | None = None,
     source: str = "screen_capture",
+    source_app: str = "",
+    source_url: str = "",
 ) -> Path:
     ocr_text = _safe_text(ocr_text)
     summary = _safe_text(summary)
@@ -32,6 +34,9 @@ def save_memory(
     path = MEMORY_DIR / f"{memory_id}.md"
 
     tags_line = f"Tags: {', '.join(tags)}" if tags else "Tags:"
+    app_line = f"Source App: {source_app}" if source_app else ""
+    url_line = f"Source URL: {source_url}" if source_url else ""
+    extra_meta = "\n".join(line for line in [app_line, url_line] if line)
 
     content = dedent(
         f"""
@@ -41,6 +46,7 @@ def save_memory(
         Source: {source}
         Memory ID: {memory_id}
         {tags_line}
+        {extra_meta}
 
         ## Summary
 

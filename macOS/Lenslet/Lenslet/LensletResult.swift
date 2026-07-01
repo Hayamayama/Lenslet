@@ -35,6 +35,12 @@ struct LensletMemory: Identifiable, Codable, Hashable {
 
     /// User-assigned tags for manual classification.
     var tags: [String]
+
+    /// Name of the app that was frontmost at capture time.
+    let sourceApp: String?
+
+    /// URL of the active browser tab at capture time (browsers only).
+    let sourceURL: String?
 }
 
 
@@ -282,7 +288,9 @@ struct RelatedMemory: Codable, Hashable {
             originalText: text,
             source: source_type,
             createdAt: nil,
-            tags: []
+            tags: [],
+            sourceApp: nil,
+            sourceURL: nil
         )
     }
 }

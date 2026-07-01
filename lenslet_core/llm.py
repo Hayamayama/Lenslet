@@ -7,18 +7,28 @@ from lenslet_core.settings import get as _setting
 OLLAMA_URL = "http://localhost:11434/api/generate"
 REQUEST_TIMEOUT = 120
 
+ALLOWED_TAGS = ["學習", "生活", "興趣"]
+
 PROMPT_TEMPLATE = """You are Lenslet, a personal knowledge assistant for clinicians and learners.
 
 The user has just captured content from their screen, clipboard, or a document.
-Write a concise summary of the captured content.
+Respond with a JSON object containing two fields: "summary" and "tags".
 
-Rules:
-- Start directly with the content — do NOT begin with labels like "Summary:", "Here is a summary:", or any heading.
+Rules for summary:
 - Write in plain prose. No markdown headers.
-- Extract the key clinical or academic ideas.
-- Explain important concepts briefly if needed.
+- Extract the key clinical, academic, or practical ideas.
 - Do not invent information not present in the captured content.
 - Keep it under 150 words.
+
+Rules for tags:
+- Choose 1 to 2 tags from this fixed list only: ["學習", "生活", "興趣"]
+- 學習: anything related to medicine, physical therapy, rehabilitation, anatomy, pharmacology, clinical practice, academic study, or any professional/educational content.
+- 生活: daily life, personal errands, household, food, travel, finance, relationships.
+- 興趣: hobbies, sports, entertainment, games, music, art, personal projects unrelated to work.
+- If unsure, prefer 學習.
+
+Respond ONLY with valid JSON, no extra text:
+{{"summary": "...", "tags": ["..."]}}
 
 Captured content:
 
@@ -136,9 +146,48 @@ def _generate_claude(prompt: str) -> str:
 
 
 def summarize(text: str) -> str:
+    """Summarize text. Returns summary string only (for backward compatibility)."""
+    summary, _ = summarize_with_tags(text)
+    return summary
+
+
+def summarize_with_tags(text: str) -> tuple[str, list[str]]:
+    """Summarize text and return (summary, tags) tuple.
+
+    Parses the LLM JSON response. Falls back gracefully if JSON is malformed.
+    """
+    import json as _json
+    import re as _re
+
     if not text or not text.strip():
         raise ValueError("Cannot summarize empty text.")
-    return _generate(PROMPT_TEMPLATE.format(text=text))
+
+    raw = _generate(PROMPT_TEMPLATE.format(text=text))
+
+    # Try direct JSON parse
+    try:
+        parsed = _json.loads(raw)
+        summary = parsed.get("summary", "").strip()
+        tags = [t for t in parsed.get("tags", []) if t in ALLOWED_TAGS]
+        if summary:
+            return summary, tags
+    except (_json.JSONDecodeError, AttributeError):
+        pass
+
+    # Try to extract JSON from within the response (some models add prose around it)
+    match = _re.search(r'\{.*\}', raw, _re.DOTALL)
+    if match:
+        try:
+            parsed = _json.loads(match.group())
+            summary = parsed.get("summary", "").strip()
+            tags = [t for t in parsed.get("tags", []) if t in ALLOWED_TAGS]
+            if summary:
+                return summary, tags
+        except (_json.JSONDecodeError, AttributeError):
+            pass
+
+    # Fallback: treat entire response as summary, no tags
+    return raw.strip(), []
 
 
 def answer_from_context(

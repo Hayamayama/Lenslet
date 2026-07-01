@@ -25,6 +25,9 @@ struct MainWindowView: View {
     @State private var chatInput = ""
     @State private var isChatLoading = false
     @State private var chatPanelOpen = false
+    @State private var chatTagFilter: String? = nil
+
+    private let chatScopes: [String?] = [nil, "學習", "生活", "興趣"]
 
     private let store = MemoryStore()
 
@@ -121,6 +124,9 @@ struct MainWindowView: View {
                                         memories[idx] = updated
                                         selectedMemory = memories[idx]
                                     }
+                                },
+                                onDelete: {
+                                    deleteMemory(memory)
                                 }
                             )
                             .id(memory.id)
@@ -387,30 +393,71 @@ struct MainWindowView: View {
     }
 
     private var chatInputBar: some View {
-        HStack(spacing: 8) {
-            TextField("Ask Lenslet…", text: $chatInput)
-                .textFieldStyle(.plain)
-                .font(.callout)
-                .onSubmit { sendChatMessage() }
-
-            Button(action: sendChatMessage) {
-                Image(systemName: "arrow.up.circle.fill")
-                    .font(.title3)
-                    .foregroundStyle(
-                        chatInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isChatLoading
-                            ? Color.secondary
-                            : Color.accentColor
-                    )
+        VStack(spacing: 0) {
+            // Scope filter chips
+            HStack(spacing: 6) {
+                Text("Scope:")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                ForEach(chatScopes, id: \.self) { scope in
+                    let label = scope ?? "全部"
+                    let isSelected = chatTagFilter == scope
+                    Button(label) { chatTagFilter = scope }
+                        .buttonStyle(.plain)
+                        .font(.caption2)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 3)
+                        .background(isSelected ? Color.accentColor.opacity(0.15) : Color.clear)
+                        .foregroundStyle(isSelected ? Color.accentColor : Color.secondary)
+                        .clipShape(Capsule())
+                        .overlay(Capsule().stroke(isSelected ? Color.accentColor.opacity(0.4) : Color.secondary.opacity(0.2), lineWidth: 1))
+                }
+                Spacer()
             }
-            .buttonStyle(.plain)
-            .disabled(chatInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isChatLoading)
+            .padding(.horizontal, 12)
+            .padding(.top, 6)
+            .padding(.bottom, 4)
+
+            Divider()
+
+            HStack(spacing: 8) {
+                TextField("Ask Lenslet…", text: $chatInput)
+                    .textFieldStyle(.plain)
+                    .font(.callout)
+                    .onSubmit { sendChatMessage() }
+
+                Button(action: sendChatMessage) {
+                    Image(systemName: "arrow.up.circle.fill")
+                        .font(.title3)
+                        .foregroundStyle(
+                            chatInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isChatLoading
+                                ? Color.secondary
+                                : Color.accentColor
+                        )
+                }
+                .buttonStyle(.plain)
+                .disabled(chatInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isChatLoading)
+            }
+            .padding(.horizontal, 12)
         }
-        .padding(.horizontal, 12)
         .padding(.vertical, 8)
         .background(Color(nsColor: .windowBackgroundColor))
     }
 
     // MARK: Data
+
+    private func deleteMemory(_ memory: LensletMemory) {
+        // Select adjacent memory before deleting
+        if let idx = memories.firstIndex(where: { $0.id == memory.id }) {
+            let next = memories.count > 1
+                ? memories[idx < memories.count - 1 ? idx + 1 : idx - 1]
+                : nil
+            selectedMemory = next
+        }
+        store.deleteMemory(memory)
+        memories.removeAll { $0.id == memory.id }
+        LensletRuntime.shared.deleteMemoryChunks(path: memory.path)
+    }
 
     private func reloadMemories() {
         let loaded = store.loadMemories()
@@ -461,7 +508,7 @@ struct MainWindowView: View {
             ["role": msg.role == .user ? "user" : "assistant", "text": msg.text]
         }
 
-        LensletRuntime.shared.runChatQuery(question: question, history: history) { result in
+        LensletRuntime.shared.runChatQuery(question: question, history: history, tagFilter: chatTagFilter) { result in
             isChatLoading = false
             switch result {
             case .success(let response):
@@ -508,12 +555,14 @@ struct MemoryDetailView: View {
     var isLoadingRelated: Bool = false
     var onSelectRelated: ((String) -> Void)? = nil
     var onTagsChanged: (([String]) -> Void)? = nil
+    var onDelete: (() -> Void)? = nil
 
     @State private var tags: [String] = []
     @State private var newTagInput = ""
     @State private var isAddingTag = false
     @State private var isEditingSummary = false
     @State private var editedSummary = ""
+    @State private var showDeleteConfirm = false
 
     private var formattedDate: String {
         guard let date = memory.createdAt else { return "" }
@@ -675,9 +724,24 @@ struct MemoryDetailView: View {
                 if let source = memory.source {
                     Label(source, systemImage: "tray.full")
                 }
+                if let app = memory.sourceApp, !app.isEmpty {
+                    Label(app, systemImage: "app.badge")
+                }
             }
             .font(.caption)
             .foregroundStyle(.secondary)
+
+            if let urlString = memory.sourceURL, !urlString.isEmpty,
+               let url = URL(string: urlString) {
+                Link(destination: url) {
+                    Label(urlString, systemImage: "link")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                }
+                .buttonStyle(.plain)
+            }
 
             Text(memory.path)
                 .font(.caption2)
@@ -702,6 +766,20 @@ struct MemoryDetailView: View {
                     NSPasteboard.general.clearContents()
                     NSPasteboard.general.setString(summary, forType: .string)
                 }
+            }
+            Spacer()
+            Button("Delete", role: .destructive) {
+                showDeleteConfirm = true
+            }
+            .confirmationDialog(
+                "Delete this memory?",
+                isPresented: $showDeleteConfirm,
+                titleVisibility: .visible
+            ) {
+                Button("Delete", role: .destructive) { onDelete?() }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("The memory file and its vector chunks will be permanently removed.")
             }
         }
         .buttonStyle(.bordered)

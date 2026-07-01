@@ -2,6 +2,7 @@ import SwiftUI
 import AppKit
 import UniformTypeIdentifiers
 import ApplicationServices
+import UserNotifications
 
 // MARK: - Runtime
 
@@ -46,6 +47,11 @@ final class LensletRuntime {
         let errorURL = URL(fileURLWithPath: NSTemporaryDirectory())
             .appendingPathComponent("lenslet_error_\(runID).log")
 
+        // Record active app before showing the status window
+        let clipFrontApp = NSWorkspace.shared.frontmostApplication
+        let clipSourceApp = clipFrontApp?.localizedName ?? ""
+        let clipSourceURL = fetchBrowserURL(bundleID: clipFrontApp?.bundleIdentifier ?? "")
+
         showStatusWindow("Saving clipboard to memory…")
 
         let process = Process()
@@ -55,6 +61,8 @@ final class LensletRuntime {
         process.environment = [
             "PATH": "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin",
             "PYTHONPATH": projectURL.path,
+            "LENSLET_SOURCE_APP": clipSourceApp,
+            "LENSLET_SOURCE_URL": clipSourceURL,
         ]
         let outPipe = Pipe()
         process.standardOutput = outPipe
@@ -130,6 +138,24 @@ final class LensletRuntime {
         }
     }
 
+    // MARK: App metadata
+
+    /// Returns the URL of the active browser tab for known browsers, or "" if unavailable.
+    func fetchBrowserURL(bundleID: String) -> String {
+        let scripts: [String: String] = [
+            "com.apple.Safari":          "tell application \"Safari\" to return URL of current tab of front window",
+            "com.google.Chrome":         "tell application \"Google Chrome\" to return URL of active tab of front window",
+            "company.thebrowser.Browser":"tell application \"Arc\" to return URL of active tab of front window",
+            "org.mozilla.firefox":       "tell application \"Firefox\" to return URL of active tab of front window",
+        ]
+        guard let source = scripts[bundleID],
+              let appleScript = NSAppleScript(source: source) else { return "" }
+        var errorDict: NSDictionary?
+        let result = appleScript.executeAndReturnError(&errorDict)
+        guard errorDict == nil else { return "" }
+        return result.stringValue ?? ""
+    }
+
     // MARK: Capture
 
     func runLenslet() {
@@ -156,6 +182,11 @@ final class LensletRuntime {
         try? FileManager.default.removeItem(at: resultURL)
         try? FileManager.default.removeItem(at: errorURL)
 
+        // Record active app BEFORE screenshot overlay steals focus
+        let frontApp = NSWorkspace.shared.frontmostApplication
+        let captureSourceApp = frontApp?.localizedName ?? ""
+        let captureSourceURL = fetchBrowserURL(bundleID: frontApp?.bundleIdentifier ?? "")
+
         guard captureScreen(to: captureURL) else {
             print("Lenslet capture cancelled or failed.")
             return
@@ -173,7 +204,9 @@ final class LensletRuntime {
         process.arguments = ["-lc", command]
         process.environment = [
             "PATH": "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin",
-            "PYTHONPATH": projectURL.path
+            "PYTHONPATH": projectURL.path,
+            "LENSLET_SOURCE_APP": captureSourceApp,
+            "LENSLET_SOURCE_URL": captureSourceURL,
         ]
 
         process.terminationHandler = { _ in
@@ -244,36 +277,61 @@ final class LensletRuntime {
         process.standardOutput = outputPipe
         process.standardError = errorPipe
 
-        // Accumulate all output lines; update status window on progress lines
-        var outputLines: [String] = []
-        var buffer = Data()
+        // Thread-safe collector for streaming output
+        final class OutputCollector: @unchecked Sendable {
+            private let lock = NSLock()
+            private var buffer = Data()
+            private var lines: [String] = []
+
+            func append(chunk: Data) { lock.withLock { buffer.append(chunk) } }
+
+            func drainLines() -> [String] {
+                lock.withLock {
+                    var result: [String] = []
+                    while let newlineRange = buffer.range(of: Data([0x0A])) {
+                        let lineData = buffer[buffer.startIndex..<newlineRange.lowerBound]
+                        buffer.removeSubrange(buffer.startIndex...newlineRange.lowerBound)
+                        if let line = String(data: lineData, encoding: .utf8)?
+                            .trimmingCharacters(in: .whitespacesAndNewlines), !line.isEmpty {
+                            lines.append(line)
+                            result.append(line)
+                        }
+                    }
+                    return result
+                }
+            }
+
+            func flushRemaining() {
+                lock.withLock {
+                    if !buffer.isEmpty,
+                       let line = String(data: buffer, encoding: .utf8)?
+                           .trimmingCharacters(in: .whitespacesAndNewlines),
+                       !line.isEmpty {
+                        lines.append(line)
+                        buffer = Data()
+                    }
+                }
+            }
+
+            func allLines() -> [String] { lock.withLock { lines } }
+        }
+
+        let collector = OutputCollector()
 
         outputPipe.fileHandleForReading.readabilityHandler = { handle in
             let chunk = handle.availableData
             guard !chunk.isEmpty else { return }
-            buffer.append(chunk)
+            collector.append(chunk: chunk)
 
-            // Process complete lines
-            while let newlineRange = buffer.range(of: Data([0x0A])) {
-                let lineData = buffer[buffer.startIndex..<newlineRange.lowerBound]
-                buffer.removeSubrange(buffer.startIndex...newlineRange.lowerBound)
-
-                guard let line = String(data: lineData, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines),
-                      !line.isEmpty else { continue }
-
-                outputLines.append(line)
-
-                // Parse progress JSON lines and update UI
+            for line in collector.drainLines() {
                 if let data = line.data(using: .utf8),
-                   let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
-                    let type = json["type"] as? String ?? ""
-                    if type == "file_done" {
-                        let idx = json["file_index"] as? Int ?? 0
-                        let total = json["total_files"] as? Int ?? fileCount
-                        let name = json["filename"] as? String ?? ""
-                        DispatchQueue.main.async {
-                            LensletRuntime.shared.updateStatusDetail("File \(idx)/\(total): \(name)")
-                        }
+                   let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                   json["type"] as? String == "file_done" {
+                    let idx = json["file_index"] as? Int ?? 0
+                    let total = json["total_files"] as? Int ?? fileCount
+                    let name = json["filename"] as? String ?? ""
+                    DispatchQueue.main.async {
+                        LensletRuntime.shared.updateStatusDetail("File \(idx)/\(total): \(name)")
                     }
                 }
             }
@@ -281,14 +339,9 @@ final class LensletRuntime {
 
         process.terminationHandler = { _ in
             outputPipe.fileHandleForReading.readabilityHandler = nil
-            // Flush remaining buffer
-            if !buffer.isEmpty, let line = String(data: buffer, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines), !line.isEmpty {
-                outputLines.append(line)
-            }
+            collector.flushRemaining()
             let errorText = String(data: errorPipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
-
-            // Find the final summary line {"status":"success","reports":[...]}
-            let finalLine = outputLines.last(where: { $0.contains("\"status\"") }) ?? ""
+            let finalLine = collector.allLines().last(where: { $0.contains("\"status\"") }) ?? ""
             DispatchQueue.main.async {
                 LensletRuntime.shared.handlePDFBatchResult(jsonLine: finalLine, errorText: errorText)
             }
@@ -450,6 +503,10 @@ final class LensletRuntime {
             showResultWindow(decoded)
             if decoded.isSuccess {
                 NotificationCenter.default.post(name: .lensletMemoryAdded, object: nil)
+                let title = decoded.summary?.components(separatedBy: ".").first ?? "Saved"
+                let related = decoded.related?.count ?? 0
+                let body = related > 0 ? "\(related) related memor\(related == 1 ? "y" : "ies") found" : "Memory saved"
+                sendNotification(title: title, body: body)
             }
         } catch {
             closeStatusWindow()
@@ -625,6 +682,9 @@ final class LensletRuntime {
             return
         }
         showMessageWindow(title: "PDFs Imported", message: batch.displayMessage)
+        let total = batch.reports.reduce(0) { $0 + ($1.chunks_stored ?? 0) }
+        let count = batch.reports.filter { $0.skipped != true && $0.error == nil }.count
+        sendNotification(title: "PDFs Imported", body: "\(count) file\(count == 1 ? "" : "s"), \(total) chunks indexed")
     }
 
     func closeStatusWindow() {
@@ -660,6 +720,26 @@ final class LensletRuntime {
 
         window.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
+    }
+
+    func requestNotificationPermission() {
+        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { _, _ in }
+    }
+
+    func sendNotification(title: String, body: String) {
+        UNUserNotificationCenter.current().getNotificationSettings { settings in
+            guard settings.authorizationStatus == .authorized else { return }
+            let content = UNMutableNotificationContent()
+            content.title = title
+            content.body = body
+            content.sound = .default
+            let request = UNNotificationRequest(
+                identifier: UUID().uuidString,
+                content: content,
+                trigger: nil
+            )
+            UNUserNotificationCenter.current().add(request)
+        }
     }
 
     func showMessageWindow(title: String, message: String) {
@@ -836,6 +916,7 @@ final class LensletRuntime {
     func runChatQuery(
         question: String,
         history: [[String: String]] = [],
+        tagFilter: String? = nil,
         completion: @escaping (Result<LensletQueryResult, Error>) -> Void
     ) {
         let projectURL = self.projectURL
@@ -849,12 +930,12 @@ final class LensletRuntime {
         // Write conversation history to a temp file
         let tempURL = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
         let historyURL = tempURL.appendingPathComponent("lenslet_history_\(UUID().uuidString).json")
-        var historyFilePath: String? = nil
-        if !history.isEmpty,
-           let historyData = try? JSONSerialization.data(withJSONObject: history) {
+        let historyFilePath: String? = {
+            guard !history.isEmpty,
+                  let historyData = try? JSONSerialization.data(withJSONObject: history) else { return nil }
             try? historyData.write(to: historyURL)
-            historyFilePath = historyURL.path
-        }
+            return historyURL.path
+        }()
 
         let outputPipe = Pipe()
         let errorPipe = Pipe()
@@ -865,6 +946,9 @@ final class LensletRuntime {
         var args = ["-m", "lenslet_core.query", question, "--json"]
         if let histPath = historyFilePath {
             args += ["--history-file", histPath]
+        }
+        if let tag = tagFilter, !tag.isEmpty {
+            args += ["--tag", tag]
         }
         process.arguments = args
         process.environment = [
@@ -895,6 +979,44 @@ final class LensletRuntime {
             }
         }
 
+        try? process.run()
+    }
+
+    // MARK: Memory deletion
+
+    func deleteMemoryChunks(path: String, completion: (() -> Void)? = nil) {
+        let projectURL = self.projectURL
+        let pythonURL = projectURL.appendingPathComponent(".venv/bin/python")
+        guard FileManager.default.fileExists(atPath: pythonURL.path) else {
+            completion?(); return
+        }
+
+        let escaped = path.replacingOccurrences(of: "'", with: "\\'")
+        let process = Process()
+        process.currentDirectoryURL = projectURL
+        process.executableURL = pythonURL
+        process.arguments = ["-c", """
+import sys
+sys.path.insert(0, '.')
+from lenslet_core.vector_memory import collection
+results = collection.get(include=['metadatas'])
+ids = [
+    id_ for id_, meta in zip(results['ids'], results['metadatas'] or [])
+    if (meta or {}).get('path') == '\(escaped)'
+]
+if ids:
+    collection.delete(ids=ids)
+print(f'deleted {{len(ids)}} chunks for path: \(escaped)')
+"""]
+        process.environment = [
+            "PATH": "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin",
+            "PYTHONPATH": projectURL.path,
+        ]
+        process.standardOutput = Pipe()
+        process.standardError = Pipe()
+        process.terminationHandler = { _ in
+            DispatchQueue.main.async { completion?() }
+        }
         try? process.run()
     }
 
@@ -1036,6 +1158,7 @@ private struct MenuBarView: View {
         }
         .onAppear {
             LensletRuntime.shared.setupGlobalHotkey()
+            LensletRuntime.shared.requestNotificationPermission()
         }
     }
 }

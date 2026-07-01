@@ -58,6 +58,8 @@ struct MemoryStore {
             summary: summary,
             originalText: originalText
         )
+        let sourceApp = metadataValue("Source App", in: raw)
+        let sourceURL = metadataValue("Source URL", in: raw)
 
         return LensletMemory(
             id: memoryID,
@@ -68,7 +70,9 @@ struct MemoryStore {
             originalText: originalText,
             source: source,
             createdAt: createdAt,
-            tags: tags
+            tags: tags,
+            sourceApp: sourceApp,
+            sourceURL: sourceURL
         )
     }
 
@@ -91,6 +95,11 @@ struct MemoryStore {
         }
 
         try? raw.write(to: fileURL, atomically: true, encoding: .utf8)
+    }
+
+    func deleteMemory(_ memory: LensletMemory) {
+        let fileURL = URL(fileURLWithPath: memory.path)
+        try? FileManager.default.removeItem(at: fileURL)
     }
 
     func saveTags(_ tags: [String], for memory: LensletMemory) {

@@ -1,17 +1,19 @@
 # Lenslet
 
-Lenslet is a local-first macOS memory tool for clinicians and learners. Capture what you see on screen, copy text from anywhere, or import PDF study materials — Lenslet extracts the content, summarises it with a local or cloud LLM, and stores everything in a searchable vector memory. When a clinical case makes you uncertain, Lenslet helps you find what you already learned.
+Lenslet is a local-first macOS memory tool for clinicians and learners. Capture what you see on screen, copy text from anywhere, or import PDF study materials — Lenslet extracts the content, summarises it with a local or cloud LLM, auto-tags it, and stores everything in a searchable vector memory. When a clinical case makes you uncertain, Lenslet helps you find what you already learned.
 
 ```
 Screen capture / Clipboard / PDF
              ↓
    Apple Vision OCR (captures)
+   pdfplumber + heading-aware chunking (PDFs)
+   Vision LLM for tables & diagrams (optional)
              ↓
-  LLM summary (Ollama or Claude)
+  LLM summary + auto-tag (學習 / 生活 / 興趣)
              ↓
      Markdown memory file
              ↓
-     Chroma vector index
+     Chroma vector index (BM25 + vector hybrid search)
              ↓
   Browse · Search · Ask · Map
 ```
@@ -59,12 +61,6 @@ ollama pull qwen3:8b
 ollama serve
 ```
 
-Verify it is running:
-
-```bash
-ollama list
-```
-
 ### 4. Build and run the macOS app
 
 Open the Xcode project:
@@ -75,7 +71,7 @@ macOS/Lenslet/Lenslet.xcodeproj
 
 Select your Mac as the run destination and press **⌘R**.
 
-The first time you run, macOS will ask for **Screen Recording** permission. Grant it so Lenslet can capture your screen.
+The first time you run, macOS will ask for **Screen Recording**, **Accessibility**, and **Notifications** permissions. Grant all three.
 
 ---
 
@@ -83,122 +79,133 @@ The first time you run, macOS will ask for **Screen Recording** permission. Gran
 
 ### Menu bar
 
-Lenslet lives in the menu bar as an eye icon (⊙). Click it to see all actions.
+Lenslet lives in the menu bar as an eye icon. Click it to see all actions.
 
 | Action | Shortcut | What it does |
 |---|---|---|
 | **Open Lenslet** | | Open the main window |
 | **Capture Screen** | ⌘⇧K | Select a screen region to capture and remember |
 | **Capture Clipboard** | ⌘⇧V | Save the current clipboard text directly to memory |
-| **Import PDF** | | Import a PDF into memory |
+| **Import PDF** | | Import one or more PDFs into memory |
 | **Ask Lenslet** | | Open the chat panel in the main window |
 | **Documents** | | List imported PDFs |
 | **Show Last Result** | | Re-open the last capture result |
 | **Settings…** | ⌘, | Change model, manage memory and vector DB |
 | **Quit** | | Quit the app |
 
-Both **⌘⇧K** and **⌘⇧V** are global shortcuts — they work from any app without opening the menu bar first. The first time you use them, macOS will ask for **Accessibility** permission.
+Both **⌘⇧K** and **⌘⇧V** are global shortcuts — they work from any app without opening the menu bar first.
 
 ### Main window
 
-The main window has four areas:
+**Sidebar (left)** — all saved memories, grouped by Today / Yesterday / This Week / Earlier. A search bar filters by title, summary, and full text. Tag chips below the search bar filter by category (學習 / 生活 / 興趣).
 
-**Sidebar (left)** — all saved memories, grouped by Today / Yesterday / This Week / Earlier. A search bar filters by title, summary, and full text. Tag chips below the search bar let you filter by category.
+**Detail pane (right)** — the selected memory's summary and original text. The summary can be edited inline. Tags can be added or removed. A **Delete** button permanently removes the memory and its vector chunks. Below the content, **Related Memories** surface automatically via hybrid search.
 
-**Detail pane (right)** — the selected memory's summary and original text. Tags can be added or removed inline. Below the content, **Related Memories** surface automatically via vector search.
+**Ask Lenslet panel (bottom)** — a persistent scrolling chat with conversation memory. Type a question and Lenslet retrieves the most relevant chunks and generates a grounded answer. Use the **scope chips** (全部 / 學習 / 生活 / 興趣) to restrict the search to a specific category. Chat history persists until you press **Clear**.
 
-**Ask Lenslet panel (bottom of detail pane)** — a persistent scrolling chat. Type a question and Lenslet retrieves the most relevant memory chunks and generates a grounded answer. Chat history is kept for the session.
-
-**Knowledge Map** — toggle with the map button (⊙) in the sidebar toolbar. Shows all memories as a force-directed graph: nodes are memories, edges connect similar ones. Hover a node to preview it in the right panel; click to open it in the detail pane.
+**Knowledge Map** — toggle with the map button in the sidebar toolbar. Shows all memories as a force-directed graph. Hover to preview; click to open in the detail pane.
 
 ### Capturing a screen region
 
-1. Press **⌘⇧K** from any app, or click **Capture Screen** in the menu bar.
+1. Press **⌘⇧K** from any app.
 2. Click and drag to select the region you want to remember.
-3. Lenslet runs OCR, generates a summary, and saves the memory.
-4. The result window shows the summary and related past memories.
+3. Lenslet runs OCR, generates a summary, auto-tags it, and saves the memory.
+4. A notification confirms the save and shows how many related memories were found.
 
 ### Capturing clipboard text
 
 1. Copy any text (from a PDF viewer, browser, EMR, etc.).
 2. Press **⌘⇧V** or click **Capture Clipboard** in the menu bar.
-3. Lenslet summarises the text and saves it to memory — no screenshot needed.
+3. Lenslet summarises and tags the text, then saves it to memory.
 
-### Importing a PDF
+### Importing PDFs
 
 1. Click **Import PDF** in the menu bar.
-2. Select a text-based PDF (lecture slides, papers, handouts).
-3. Lenslet extracts the text, splits it into chunks, and stores them in the shared vector index.
+2. Select one or more PDF files, or a whole folder — Lenslet processes all PDFs it finds.
+3. Each file is deduplicated: if a PDF was already imported, it is skipped automatically.
+4. A notification confirms the import with the number of files and chunks indexed.
 
-PDF chunks and screen captures live in the same vector index, so asking a question searches across both.
+Lenslet uses a three-layer extraction strategy per page:
+
+| Page type | Method |
+|---|---|
+| Text with tables | pdfplumber → Markdown table |
+| Text with headings | Heading-aware chunking (font-size detection) |
+| Diagrams / flowcharts / scanned pages | Vision LLM (if enabled) or Apple Vision OCR |
 
 ### Asking Lenslet a question
 
-Open the **Ask Lenslet** panel at the bottom of the detail pane. Type your question in plain language:
+Open the **Ask Lenslet** panel at the bottom of the detail pane. Type your question in plain language. Lenslet remembers the conversation context so follow-up questions work naturally:
 
 - *"What do I know about post-operative PT for hip replacement?"*
-- *"This patient has limited knee flexion after TKA, what exercises do I have notes on?"*
+- *"What about complications?"* ← Lenslet understands the context from the previous turn
 - *"Summarise what I captured about shoulder arthroplasty."*
 
-### Tagging memories
+Use the **scope chips** to restrict the search:
+- **全部** — search all memories (default)
+- **學習** — clinical and academic content only
+- **生活** — daily life content only
+- **興趣** — hobby and personal content only
 
-Open any memory in the detail pane. Click **+ Add tag** below the title to type a tag and press Return. Click the **✕** on any tag to remove it. Tags are saved immediately to the memory file.
+Press **Clear** to start a new conversation thread.
 
-Use the tag filter chips in the sidebar to view only memories with a specific tag.
+### Tagging
+
+Memories are auto-tagged at capture time using the LLM. Tags follow a fixed three-category system:
+
+| Tag | Content |
+|---|---|
+| 學習 | Medicine, physical therapy, rehabilitation, anatomy, academic study |
+| 生活 | Daily life, errands, food, travel, personal admin |
+| 興趣 | Hobbies, sports, entertainment, personal projects |
+
+You can edit tags manually in the detail pane at any time.
 
 ### Knowledge Map
 
-Click the map icon (top of the sidebar) to switch to the knowledge map. The map runs a force-directed simulation to cluster memories by semantic similarity.
+Click the map icon (top of the sidebar) to switch to the knowledge map.
 
 - **Node colour**: blue = screen capture, orange = PDF, green = clipboard
-- **Edge weight**: proportional to cosine similarity between memories
-- **Hover**: preview panel on the right shows the title, tags, and connected nodes
-- **Click**: selects the memory and switches back to the detail view
-- **Drag**: pan the canvas
-- **Pinch**: zoom in/out
-- **Reset** button: returns to the default position and scale
+- **Hover**: preview panel on the right shows title, tags, and connected nodes
+- **Click**: opens the memory in the detail pane
+- **Drag**: pan the canvas · **Pinch**: zoom · **Reset**: return to default view
 
 ---
 
 ## Settings (⌘,)
 
-Open Settings from the menu bar or with **⌘,**.
+### Project
+
+Shows the current project folder (where `main.py` lives). Use **Change folder…** to relocate it, or **Clear saved path** to reset to the default. Lenslet will prompt you to choose a folder if it cannot find the project root.
 
 ### Model
 
-Choose between two backends:
-
-**Ollama (local)** — fully private, runs on your Mac. Requires Ollama to be running. The model dropdown lists all currently installed models. To add a model:
-
-```bash
-ollama pull <model-name>
-```
-
-Recommended models for Apple Silicon:
+**Ollama (local)** — fully private, runs on your Mac. Recommended models for Apple Silicon:
 
 | Model | Size | Notes |
 |---|---|---|
 | `qwen3:8b` | ~5 GB | Default. Good balance of speed and quality. |
 | `qwen3:4b` | ~3 GB | Faster, slightly lower quality. |
-| `llama3.2:3b` | ~2 GB | Lightweight option. |
 
-**Claude API** — uses Anthropic's Claude models. Faster and higher quality, but requires an internet connection and an API key.
+**Claude API** — uses Anthropic's Claude models. Faster and higher quality, but requires an internet connection and an API key from [console.anthropic.com](https://console.anthropic.com). The API key is stored locally at `~/.lenslet/settings.json`.
 
-1. Get an API key at [console.anthropic.com](https://console.anthropic.com).
-2. Paste it into the API Key field in Settings.
-3. Choose a model:
-   - **Haiku 4.5** — fast and cheap, good for everyday captures.
-   - **Sonnet 4.6** — smarter, better for complex clinical questions.
+### Vision (PDF structured content)
 
-The API key is stored locally at `~/.lenslet/settings.json` and never sent anywhere except the Anthropic API.
+When enabled, pages containing tables, flowcharts, or diagrams are sent to a Vision LLM for structured extraction instead of plain OCR.
+
+- **Ollama backend**: uses `qwen2.5vl:7b` (pull with `ollama pull qwen2.5vl:7b`)
+- **Claude backend**: uses the configured Claude model with vision input
+- If Claude is selected but no API key is set, Lenslet falls back to Ollama automatically
+
+When disabled (default), Lenslet uses pdfplumber for tables and Apple Vision OCR for image-heavy pages.
 
 ### Memory
 
-Shows how many memory files are saved. **Clear all memories** deletes all Markdown memory files. This cannot be undone.
+Shows how many memory files are saved. **Clear all memories** deletes all Markdown files. This cannot be undone.
 
 ### Vector Database
 
-Shows how many chunks are indexed, broken down by source. Each PDF can be removed individually without affecting other memories.
+Shows how many chunks are indexed by source. Each PDF can be removed individually.
 
 ---
 
@@ -209,7 +216,7 @@ Lenslet/
 ├── macOS/
 │   └── Lenslet/                   — Swift macOS app (Xcode project)
 │       └── Lenslet/
-│           ├── LensletApp.swift        — app entry point, menu bar, global hotkeys
+│           ├── LensletApp.swift        — app entry point, menu bar, global hotkeys, notifications
 │           ├── MainWindowView.swift    — main window (sidebar + detail + chat + map toggle)
 │           ├── KnowledgeMapView.swift  — force-directed knowledge map
 │           ├── SettingsView.swift      — settings window
@@ -219,17 +226,19 @@ Lenslet/
 │
 ├── lenslet_core/          — Python core
 │   ├── ocr.py             — Apple Vision OCR via PyObjC
-│   ├── llm.py             — LLM summarise and Q&A (Ollama + Claude API)
+│   ├── llm.py             — LLM summarise + auto-tag + Q&A (Ollama + Claude API)
+│   ├── vision_llm.py      — Vision LLM for structured page analysis
 │   ├── memory.py          — write Markdown memory files
-│   ├── vector_memory.py   — Chroma vector store (add, search)
+│   ├── vector_memory.py   — Chroma vector store (add, hybrid search with BM25 + RRF)
 │   ├── pipeline.py        — capture and clipboard pipelines
-│   ├── pdf_ingest.py      — PDF extraction and chunking
-│   ├── query.py           — memory Q&A CLI entry point
+│   ├── pdf_ingest.py      — PDF extraction: heading-aware chunking, table detection, Vision routing
+│   ├── query.py           — memory Q&A with conversation history and tag filter
 │   ├── map.py             — knowledge graph data (cosine similarity, node/edge builder)
 │   └── settings.py        — read/write ~/.lenslet/settings.json
 │
 ├── memories/              — Markdown memory files (git-ignored)
 ├── chroma_db/             — Chroma vector database (git-ignored)
+├── legacy/                — earlier pipeline experiments (reference only)
 ├── main.py                — Python CLI entry point
 └── requirements.txt
 ```
@@ -238,19 +247,21 @@ Lenslet/
 
 ## Architecture notes
 
-**Swift owns the UI, screen capture, and clipboard.** macOS permissions (Screen Recording, Accessibility) are easier to manage when the native app initiates these actions.
+**Swift owns the UI, screen capture, clipboard, and notifications.** macOS permissions (Screen Recording, Accessibility, Notifications) are easier to manage from the native app.
 
 **Python owns OCR, LLM, memory, and vector search.** Swift calls Python via subprocess and communicates through JSON on stdout.
 
-**Settings are shared via `~/.lenslet/settings.json`.** Both Swift (writes) and Python (reads) use this file so model changes take effect immediately.
+**Hybrid search (BM25 + vector RRF).** Every query runs both BM25 lexical ranking and Chroma vector ranking, then fuses the results with Reciprocal Rank Fusion (k=60). This handles both exact keyword matches and semantic similarity.
 
-**Tags are stored in the Markdown memory file** under a `Tags:` metadata line and read back by `MemoryStore` on every load.
+**Heading-aware PDF chunking.** Lenslet detects heading font sizes using PyMuPDF span metadata and splits chunks at heading boundaries. Each chunk carries a `section_heading` metadata field used to cite the source section in Ask Lenslet answers.
+
+**Auto-tagging.** On every capture, the LLM classifies the content into a fixed tag set (學習 / 生活 / 興趣) as part of the summarisation step. Tags are stored in the Markdown memory file and in Chroma metadata for filtered search.
+
+**Settings are shared via `~/.lenslet/settings.json`.** Both Swift (writes) and Python (reads) use this file.
 
 ---
 
 ## Development
-
-To test the Python pipeline directly:
 
 ```bash
 source .venv/bin/activate
@@ -258,17 +269,20 @@ source .venv/bin/activate
 # Capture from a screenshot file
 python main.py --image capture.png
 
-# Capture from clipboard text file
+# Capture from clipboard text
 python main.py --text-file note.txt
 
-# Import a PDF
+# Import a single PDF
 python main.py --pdf lecture.pdf
+
+# Import multiple PDFs or a folder
+python main.py --pdf-batch slides/ notes.pdf
 
 # Search memory
 python main.py --search "hip arthroplasty ROM"
 
-# Ask a question
-python -m lenslet_core.query "What do I know about post-op PT for THA?"
+# Ask a question (with optional tag scope)
+python -m lenslet_core.query "What do I know about TKA rehab?" --tag 學習
 
 # Show stats
 python main.py --stats
@@ -277,13 +291,9 @@ python main.py --stats
 python main.py --map
 ```
 
-All commands accept `--json` for machine-readable output.
-
 ---
 
 ## Environment variable
-
-If Lenslet cannot find the project root, set:
 
 ```bash
 LENSLET_PROJECT_ROOT=/path/to/Lenslet
@@ -297,8 +307,9 @@ LENSLET_PROJECT_ROOT=/path/to/Lenslet
 |---|---|
 | Screen Recording | Capturing screen regions |
 | Accessibility | Global keyboard shortcuts (⌘⇧K, ⌘⇧V) |
+| Notifications | Capture and import completion alerts |
 
-Both are requested automatically on first use.
+All three are requested automatically on first use.
 
 ---
 
@@ -306,15 +317,33 @@ Both are requested automatically on first use.
 
 - OCR quality depends on screenshot resolution and font clarity.
 - Local Ollama models are slower than cloud APIs, especially for long contexts.
-- PDF ingestion only works on text-based PDFs. Scanned PDFs need OCR pre-processing.
+- PDF ingestion only works on text-based PDFs. Scanned PDFs require Vision LLM to be enabled.
 - The app is not notarized or distributed through the App Store.
 - The knowledge map requires at least 2 memories to render.
+- Vision LLM page analysis (qwen2.5vl / Claude) can be slow for large PDFs with many visual pages.
 
 ---
 
 ## Roadmap
 
-- [ ] Drag and drop import
+### Recently completed
+- [x] Batch PDF import with folder selection
+- [x] Heading-aware PDF chunking (font-size detection)
+- [x] pdfplumber table extraction to Markdown
+- [x] Vision LLM routing for diagrams and flowcharts
+- [x] Duplicate PDF detection (skips already-imported files)
+- [x] Auto-tagging with fixed categories (學習 / 生活 / 興趣)
+- [x] Hybrid search (BM25 + vector RRF)
+- [x] Ask Lenslet conversation memory
+- [x] Ask Lenslet scope filter by tag
+- [x] Inline summary editing in detail pane
+- [x] Individual memory deletion with Chroma cleanup
+- [x] macOS notifications on capture and import complete
+- [x] Configurable project path via Settings
+
+### Planned
+- [ ] App metadata capture (active app, window title, URL) on screen capture
+- [ ] Drag and drop PDF import
+- [ ] Anki export (.apkg)
 - [ ] Session-based memory grouping
-- [ ] App metadata capture (active app, URL)
 - [ ] UMAP layout option for knowledge map
