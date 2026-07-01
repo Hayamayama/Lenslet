@@ -1,0 +1,16 @@
+{
+  "source": "/Users/kris/Documents/04_Research_Dev/VSC/Lenslet/macOS/Lenslet/Lenslet/ContentView.swift",
+  "tables": {
+    "Localizable": [
+      {
+        "comment": "",
+        "key": "Hello, world!",
+        "location": {
+          "startingColumn": 18,
+          "startingLine": 16
+        }
+      }
+    ]
+  },
+  "version": 1
+}

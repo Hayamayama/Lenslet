@@ -14,10 +14,31 @@ client = chromadb.PersistentClient(path=str(CHROMA_PATH))
 collection = client.get_or_create_collection(name=COLLECTION_NAME)
 
 
+
 def _compose_document(text: str, summary: str) -> str:
     text = text or ""
     summary = summary or ""
     return f"{summary.strip()}\n\n{text.strip()}".strip()
+
+
+def _clean_metadata(metadata: dict[str, Any]) -> dict[str, str | int | float | bool]:
+    """Return Chroma-safe metadata values.
+
+    Chroma metadata values must be scalar. Dropping None values keeps optional
+    fields from crashing ingestion while preserving the useful source context.
+    """
+    cleaned: dict[str, str | int | float | bool] = {}
+
+    for key, value in metadata.items():
+        if value is None:
+            continue
+        if isinstance(value, (str, int, float, bool)):
+            cleaned[str(key)] = value
+        else:
+            cleaned[str(key)] = str(value)
+
+    return cleaned
+
 
 
 def add_memory(memory_id: str, text: str, summary: str, path: str | Path) -> None:
@@ -39,6 +60,35 @@ def add_memory(memory_id: str, text: str, summary: str, path: str | Path) -> Non
                 "summary": summary or "",
             }
         ],
+    )
+
+
+def add_document_chunk(
+    chunk_id: str,
+    text: str,
+    metadata: dict[str, Any],
+) -> None:
+    """Insert or update one document chunk in Chroma.
+
+    This is the generic memory entry point for PDF, DOCX, Markdown, browser,
+    clipboard, and future ingestion sources. Source-specific modules should
+    prepare text and metadata, then hand the final chunk to this function.
+    """
+    document = (text or "").strip()
+    if not document:
+        raise ValueError("Cannot add empty document chunk to vector store.")
+
+    safe_metadata = _clean_metadata(
+        {
+            "source_type": "document",
+            **(metadata or {}),
+        }
+    )
+
+    collection.upsert(
+        ids=[str(chunk_id)],
+        documents=[document],
+        metadatas=[safe_metadata],
     )
 
 
@@ -79,8 +129,13 @@ def search_related(query: str, n_results: int = 3) -> list[dict[str, Any]]:
             {
                 "id": memory_id,
                 "path": metadata.get("path", ""),
+                "source_type": metadata.get("source_type", "screenshot"),
+                "filename": metadata.get("filename", ""),
+                "page": metadata.get("page"),
+                "chunk_index": metadata.get("chunk_index"),
                 "distance": distance,
                 "text": document[:DOCUMENT_PREVIEW_CHARS],
+                "metadata": metadata,
             }
         )
 

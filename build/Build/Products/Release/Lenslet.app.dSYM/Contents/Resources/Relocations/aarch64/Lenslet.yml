@@ -1,0 +1,5 @@
+---
+triple:          'arm64-apple-darwin'
+binary-path:     '/Users/kris/Documents/04_Research_Dev/VSC/Lenslet/build/Build/Products/Release/Lenslet.app/Contents/MacOS/Lenslet'
+relocations:     []
+...

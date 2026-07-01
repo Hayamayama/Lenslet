@@ -1,194 +1,37 @@
-
-
 # Lenslet
 
-Lenslet is a local-first macOS memory capture tool.
+Lenslet is a local-first macOS memory tool. It captures what you see on screen, extracts the text, summarises it with a local or cloud LLM, and stores everything in a searchable vector memory. When you see something clinical, academic, or just interesting, Lenslet remembers it so you can find it later.
 
-It turns selected screen content into searchable personal memory:
-
-```text
-Screen Capture
-    ↓
+```
+Screen capture / PDF
+       ↓
 Apple Vision OCR
-    ↓
-Local LLM Summary via Ollama
-    ↓
-Markdown Memory
-    ↓
-Chroma Vector Search
-    ↓
-Memory Browser
+       ↓
+LLM summary (Ollama or Claude API)
+       ↓
+Markdown memory file
+       ↓
+Chroma vector index
+       ↓
+Main window — browse, search, ask
 ```
 
-The long-term goal is simple:
-
-> Everything you see becomes searchable memory.
-
-Lenslet is currently an early alpha prototype. It is built for local experimentation, not production distribution yet.
-
----
-
-## Current Status
-
-### Working
-
-- macOS menu bar app
-- Swift-owned screen capture flow
-- Apple Vision OCR through Python / PyObjC
-- Local summary generation through Ollama
-- `qwen3:8b` local model support
-- Markdown memory writing
-- Chroma vector memory storage
-- Related memory search
-- Result window
-- Memory Browser
-- Open Memory
-- Reveal in Finder
-- Copy Summary
-
-### Recently Stabilized
-
-- Fixed `EXC_BAD_ACCESS` caused by AppKit window transform animation lifecycle.
-- Disabled window animation for custom result/status/memory windows.
-- Replaced unsafe `close()` calls with `orderOut(nil)` where appropriate.
-- Kept screen capture ownership in Swift to reduce macOS Screen Recording permission issues.
-
----
-
-## Project Philosophy
-
-Lenslet is not just an OCR app.
-
-It is not just a RAG demo.
-
-It is becoming a local memory layer for things the user sees, reads, studies, debugs, or researches.
-
-The product loop is:
-
-```text
-Capture
-    ↓
-Understand
-    ↓
-Remember
-    ↓
-Reconnect
-```
-
-Screenshot capture is only the first input source. Future sources may include PDFs, clipboard text, folders, audio, and webpages.
-
----
-
-## Architecture
-
-```text
-Lenslet/
-├── macOS/
-│   └── Lenslet/
-│       └── Lenslet/
-│           ├── LensletApp.swift
-│           ├── LensletResult.swift
-│           ├── ResultView.swift
-│           ├── MemoryStore.swift
-│           ├── MemoryBrowserView.swift
-│           └── ContentView.swift
-│
-├── lenslet_core/
-│   ├── capture.py
-│   ├── ocr.py
-│   ├── llm.py
-│   ├── memory.py
-│   ├── vector_memory.py
-│   └── pipeline.py
-│
-├── memories/
-├── captures/
-├── chroma_db/
-├── main.py
-└── requirements.txt
-```
-
----
-
-## Core Flow
-
-### macOS App Flow
-
-The macOS app owns the user-facing capture process.
-
-```text
-Menu Bar Capture
-    ↓
-Swift runs screencapture
-    ↓
-Python receives --image <path>
-    ↓
-OCR / LLM / Memory pipeline runs
-    ↓
-JSON result returns to Swift
-    ↓
-Result window displays summary, OCR, and related memories
-```
-
-This design is intentional. Screen capture permissions are less chaotic when capture is initiated by the macOS app instead of a Python subprocess.
-
-### Python CLI Flow
-
-For development and debugging, the Python pipeline can still run directly:
-
-```bash
-python main.py --json
-```
-
-Or with an existing image:
-
-```bash
-python main.py --json --image capture.png
-```
+> Early alpha. Built for personal use on macOS.
 
 ---
 
 ## Requirements
 
-### macOS
-
-Lenslet currently targets macOS and uses Apple Vision for OCR.
-
-### Python
-
-Python dependencies are listed in:
-
-```bash
-requirements.txt
-```
-
-Create and activate a virtual environment:
-
-```bash
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-```
-
-### Ollama
-
-Lenslet currently expects Ollama to be running locally.
-
-Recommended model:
-
-```bash
-ollama pull qwen3:8b
-```
-
-Start or verify Ollama:
-
-```bash
-ollama list
-```
+| Requirement | Version |
+|---|---|
+| macOS | 14 Sonoma or later |
+| Python | 3.11 or later |
+| Xcode | 16 or later |
+| Ollama | latest (for local LLM) |
 
 ---
 
-## Development Setup
+## Setup
 
 ### 1. Clone the repository
 
@@ -197,7 +40,7 @@ git clone <repo-url>
 cd Lenslet
 ```
 
-### 2. Install Python dependencies
+### 2. Create a Python virtual environment
 
 ```bash
 python3 -m venv .venv
@@ -205,193 +48,238 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-### 3. Install Ollama model
+### 3. Install Ollama
+
+Download Ollama from [ollama.com](https://ollama.com) and install it.
+
+Then pull a model. Lenslet defaults to `qwen3:8b`, which runs well on Apple Silicon:
 
 ```bash
 ollama pull qwen3:8b
 ```
 
-### 4. Test the Python pipeline
+Start Ollama (it runs as a background service after installation):
 
 ```bash
-source .venv/bin/activate
-python -m py_compile main.py lenslet_core/*.py
-python main.py --json
+ollama serve
 ```
 
-A successful result should include:
+Verify it is running:
 
-```json
-{
-  "status": "success",
-  "ocr": "...",
-  "summary": "...",
-  "memory_path": "...",
-  "related": [...],
-  "error": null
-}
+```bash
+ollama list
 ```
 
-### 5. Run the macOS app
+You should see `qwen3:8b` in the list.
 
-Open:
+### 4. Build and run the macOS app
 
-```text
+Open the Xcode project:
+
+```
 macOS/Lenslet/Lenslet.xcodeproj
 ```
 
-Build and run from Xcode.
+Select your Mac as the run destination and press **⌘R**.
+
+The first time you run, macOS will ask for **Screen Recording** permission. Grant it so Lenslet can capture your screen.
 
 ---
 
-## Environment Variables
+## Using Lenslet
 
-If the app cannot find the project root, set:
+### Menu bar
+
+Lenslet lives in the menu bar as an eye icon. Click it to see all actions.
+
+| Action | What it does |
+|---|---|
+| **Open Lenslet** | Open the main window |
+| **Capture** | Select a region of the screen to capture and remember |
+| **Import PDF** | Import a PDF (lecture slides, paper, handout) into memory |
+| **Ask Lenslet** | Ask a question against your memory (opens chat in main window) |
+| **Documents** | List imported PDFs |
+| **Show Last Result** | Re-open the last capture result |
+| **Settings…** | Change model, manage memory and vector DB |
+| **Quit** | Quit the app |
+
+### Main window (⌘,)
+
+The main window has three areas:
+
+**Sidebar (left)** — all saved memories, grouped by Today / Yesterday / This Week / Earlier. Search bar at the top filters by title, summary, and full text.
+
+**Detail pane (right)** — the selected memory's summary and original OCR text. Below the content, **Related Memories** appear automatically — Lenslet runs a vector search on the current memory and surfaces the most relevant things you have captured before.
+
+**Ask Lenslet panel (bottom)** — a persistent chat panel. Click the header to expand it. Type a question and Lenslet searches your memory, retrieves the most relevant chunks, and generates a grounded answer. Chat history is kept for the session.
+
+### Capturing a screen region
+
+1. Click **Capture** in the menu bar.
+2. Click and drag to select the region you want to remember.
+3. Lenslet runs OCR, generates a summary, and saves the memory.
+4. The result window shows the summary and related memories from before.
+
+### Importing a PDF
+
+1. Click **Import PDF** in the menu bar.
+2. Select a text-based PDF (lecture slides, papers, handouts).
+3. Lenslet extracts the text, splits it into chunks, and stores them in the shared vector index.
+
+PDF chunks and screen capture memories live in the same vector index, so asking Lenslet a question will search across both.
+
+### Asking Lenslet a question
+
+Open the **Ask Lenslet** panel at the bottom of the main window. Type your question in plain language:
+
+- *"What do I know about post-operative PT for hip replacement?"*
+- *"This patient has limited knee flexion after TKA, what exercises do I have notes on?"*
+- *"Summarise what I captured about fracture management."*
+
+Lenslet retrieves the most relevant memory chunks and uses the LLM to generate a grounded answer with source references.
+
+---
+
+## Settings (⌘,)
+
+Open Settings from the menu bar or with **⌘,**.
+
+### Model
+
+Choose between two backends:
+
+**Ollama (local)** — fully private, runs on your Mac. Requires Ollama to be running. The model dropdown lists all models currently installed. To add a model:
 
 ```bash
-LENSLET_PROJECT_ROOT=/Users/kris/Documents/04_Research_Dev/VSC/Lenslet
+ollama pull <model-name>
 ```
 
-This is useful when running from Xcode or moving the repository.
+Recommended models for Apple Silicon:
+
+| Model | Size | Notes |
+|---|---|---|
+| `qwen3:8b` | ~5 GB | Default. Good balance of speed and quality. |
+| `qwen3:4b` | ~3 GB | Faster, slightly lower quality. |
+| `llama3.2:3b` | ~2 GB | Lightweight option. |
+
+**Claude API** — uses Anthropic's Claude models. Faster and higher quality, but requires an internet connection and an API key.
+
+1. Get an API key at [console.anthropic.com](https://console.anthropic.com).
+2. Paste it into the API Key field in Settings.
+3. Choose a model:
+   - **Haiku 4.5** — fast and cheap, good for everyday captures.
+   - **Sonnet 4.6** — smarter, better for complex clinical or research questions.
+
+The API key is stored locally at `~/.lenslet/settings.json` and never sent anywhere except the Anthropic API.
+
+### Memory
+
+Shows how many memory files are saved. **Clear all memories** deletes all Markdown memory files from disk. This cannot be undone.
+
+### Vector Database
+
+Shows how many chunks are indexed and breaks them down by PDF. Each PDF can be removed individually — this removes its chunks from the vector index without affecting your other memories.
 
 ---
 
-## Memory Format
+## Project structure
 
-Each captured memory is saved as Markdown in:
-
-```text
-memories/
 ```
-
-Current memory format:
-
-```markdown
-# Lenslet Memory
-
-Created: 2026-06-28T13:46:50
-Source: screen_capture
-Memory ID: 2026-06-28_13-46-50_3a6b73b1
-
-## Summary
-
-...
-
-## Original Capture
-
-...
-```
-
-The Memory Browser reads these Markdown files directly.
-
----
-
-## Memory Browser
-
-The Memory Browser is the first browsing layer for Lenslet memory.
-
-Current features:
-
-- List saved memories
-- Search title / preview / summary / original text / source
-- View summary and original capture
-- Open memory Markdown file
-- Reveal memory in Finder
-- Copy summary
-
-Menu path:
-
-```text
-Lenslet Menu Bar Icon → Memories
+Lenslet/
+├── macOS/
+│   └── Lenslet/          — Swift macOS app (Xcode project)
+│       └── Lenslet/
+│           ├── LensletApp.swift        — app entry point, menu bar, window management
+│           ├── MainWindowView.swift    — main window (sidebar + detail + chat)
+│           ├── SettingsView.swift      — settings window
+│           ├── LensletResult.swift     — data models
+│           ├── MemoryStore.swift       — reads memory Markdown files
+│           ├── MemoryBrowserView.swift — legacy browser (kept for reference)
+│           ├── ResultView.swift        — capture result popup
+│           └── ContentView.swift       — unused placeholder
+│
+├── lenslet_core/          — Python core
+│   ├── capture.py         — fallback screen capture (not used in app flow)
+│   ├── ocr.py             — Apple Vision OCR via PyObjC
+│   ├── llm.py             — LLM summarise and Q&A (Ollama + Claude API)
+│   ├── memory.py          — write Markdown memory files
+│   ├── vector_memory.py   — Chroma vector store (add, search)
+│   ├── pipeline.py        — full capture pipeline
+│   ├── pdf_ingest.py      — PDF extraction and chunking
+│   ├── query.py           — memory Q&A CLI entry point
+│   └── settings.py        — read/write ~/.lenslet/settings.json
+│
+├── memories/              — Markdown memory files (git-ignored)
+├── chroma_db/             — Chroma vector database (git-ignored)
+├── main.py                — Python CLI entry point
+└── requirements.txt
 ```
 
 ---
 
-## Known Limitations
+## Architecture notes
 
-- OCR quality depends heavily on screenshot clarity.
-- Vision OCR may normalize punctuation strangely, especially in code screenshots.
-- The current memory parser expects the existing Markdown format.
-- Memory search is still basic.
-- Related memory scoring is not yet user-friendly.
-- App metadata such as active app name, URL, or file source is not yet captured.
-- The app is not packaged or notarized.
+**Swift owns the UI and screen capture.** macOS Screen Recording permissions are easier to manage when the native app initiates the capture rather than a Python subprocess.
+
+**Python owns OCR, LLM, memory, and vector search.** Swift calls Python via subprocess and communicates through JSON on stdout.
+
+**Settings are shared via `~/.lenslet/settings.json`.** Both Swift (writes) and Python (reads) use this file so model selection in the UI takes effect immediately for all pipeline operations.
+
+---
+
+## Development
+
+To test the Python pipeline directly without the app:
+
+```bash
+source .venv/bin/activate
+
+# Capture and process a screenshot interactively
+python main.py
+
+# Process an existing image
+python main.py --image capture.png
+
+# Import a PDF
+python main.py --pdf lecture.pdf
+
+# Search memory
+python main.py --search "hip arthroplasty ROM"
+
+# Ask a question
+python -m lenslet_core.query "What do I know about post-op PT for THA?"
+
+# Show stats
+python main.py --stats
+```
+
+All commands accept `--json` for machine-readable output.
+
+---
+
+## Environment variable
+
+If Lenslet cannot find the project root (for example when running from Xcode with a non-standard path), set:
+
+```bash
+LENSLET_PROJECT_ROOT=/path/to/Lenslet
+```
+
+---
+
+## Known limitations
+
+- OCR quality depends on screenshot resolution and font clarity.
+- Local Ollama models are slower than cloud APIs, especially for long contexts.
+- PDF ingestion only works on text-based PDFs. Scanned PDFs need OCR pre-processing.
+- The app is not notarized or distributed through the App Store.
 
 ---
 
 ## Roadmap
 
-### v0.2
-
-- Improve Memory Browser UI
-- Add memory grouping by date
-- Add better search behavior
-- Add direct actions to ResultView
-- Improve summary formatting
-
-### v0.3
-
-- PDF ingestion
-- Drag and drop import
-- Clipboard capture
-- Folder watch
-
-### v0.4
-
-- App metadata
-- Timeline view
-- Session memory
-- Natural language memory retrieval
-
-### Long-Term
-
-- Knowledge graph
-- Local-first personal research assistant
-- Multi-source memory engine
-
----
-
-## Development Notes
-
-Current stable architecture rule:
-
-```text
-Swift owns UI and screen capture.
-Python owns OCR, LLM, memory writing, and vector search.
-```
-
-Do not move screen capture back into Python for the app flow unless there is a clear reason. macOS Screen Recording permissions are easier to reason about when the Swift app owns capture.
-
-For AppKit windows, avoid unnecessary `close()` calls during animated transitions. Use `orderOut(nil)` for hiding custom windows unless release is explicitly needed.
-
----
-
-## Git Workflow
-
-Recommended workflow:
-
-```bash
-git checkout -b feature/<feature-name>
-```
-
-After each stable feature:
-
-```bash
-git add .
-git commit -m "feat: describe the feature"
-git push origin feature/<feature-name>
-```
-
-Keep Xcode recommended setting changes in a separate commit from feature work.
-
----
-
-## Current Milestone
-
-Lenslet has reached the first usable alpha milestone:
-
-```text
-Capture → OCR → Summary → Memory → Related Search → Memory Browser
-```
-
-This is the first version where memory is no longer just an output artifact. It is now a browsable part of the product.
+- [ ] Visual knowledge map (embedding space visualisation)
+- [ ] Clipboard capture
+- [ ] Drag and drop import
+- [ ] Session-based memory grouping
+- [ ] App metadata capture (active app, URL)

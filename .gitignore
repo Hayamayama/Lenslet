@@ -2,33 +2,34 @@
 .venv/
 __pycache__/
 *.pyc
-lenslet_core/__pycache__/
-lenslet_core/*.pyc
-lenslet_core/ingest/__pycache__/
-lenslet_core/ingest/*.pyc
-
+*.pyo
 
 # macOS
 .DS_Store
+.AppleDouble
 
+# Xcode
+xcuserdata/
+*.xcuserstate
+DerivedData/
 
-# Lenslet runtime data
-data/
+# Lenslet runtime data (generated, not source)
 memories/
+captures/
 chroma_db/
+data/
+build/
 
+# Settings (may contain API keys)
+.lenslet/
 
-# screenshots
+# Temp / logs
 capture.png
-
-
-# logs
 *.log
+*.tmp
 
-
-# env
+# Environment
 .env
 
+# Legacy
 legacy/
-
-xcuserdata/

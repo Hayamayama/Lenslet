@@ -1,16 +1,4 @@
-pyobjc-framework-Vision
-pyobjc-framework-Quartz
-pillow
-requests
-chromadb
-
-markitdown[all]
-watchdog
-pymupdf
-ollama
-numpy
-opencv-python
-# ===== macOS Native =====
+# ===== macOS Native (OCR) =====
 pyobjc-framework-Vision
 pyobjc-framework-Quartz
 
@@ -28,6 +16,6 @@ watchdog
 pillow
 opencv-python
 
-# ===== Utilities =====
+# ===== LLM Backends =====
 requests
 anthropic

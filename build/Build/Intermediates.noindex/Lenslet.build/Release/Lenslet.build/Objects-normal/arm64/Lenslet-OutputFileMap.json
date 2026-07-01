@@ -1,0 +1,46 @@
+{
+  "" : {
+    "const-values" : "/Users/kris/Documents/04_Research_Dev/VSC/Lenslet/build/Build/Intermediates.noindex/Lenslet.build/Release/Lenslet.build/Objects-normal/arm64/Lenslet-primary.swiftconstvalues",
+    "dependencies" : "/Users/kris/Documents/04_Research_Dev/VSC/Lenslet/build/Build/Intermediates.noindex/Lenslet.build/Release/Lenslet.build/Objects-normal/arm64/Lenslet-primary.d",
+    "diagnostics" : "/Users/kris/Documents/04_Research_Dev/VSC/Lenslet/build/Build/Intermediates.noindex/Lenslet.build/Release/Lenslet.build/Objects-normal/arm64/Lenslet-primary.dia",
+    "emit-module-dependencies" : "/Users/kris/Documents/04_Research_Dev/VSC/Lenslet/build/Build/Intermediates.noindex/Lenslet.build/Release/Lenslet.build/Objects-normal/arm64/Lenslet-primary-emit-module.d",
+    "emit-module-diagnostics" : "/Users/kris/Documents/04_Research_Dev/VSC/Lenslet/build/Build/Intermediates.noindex/Lenslet.build/Release/Lenslet.build/Objects-normal/arm64/Lenslet-primary-emit-module.dia",
+    "pch" : "/Users/kris/Documents/04_Research_Dev/VSC/Lenslet/build/Build/Intermediates.noindex/Lenslet.build/Release/Lenslet.build/Objects-normal/arm64/Lenslet-primary-Bridging-header.pch",
+    "swift-dependencies" : "/Users/kris/Documents/04_Research_Dev/VSC/Lenslet/build/Build/Intermediates.noindex/Lenslet.build/Release/Lenslet.build/Objects-normal/arm64/Lenslet-primary.swiftdeps"
+  },
+  "/Users/kris/Documents/04_Research_Dev/VSC/Lenslet/build/Build/Intermediates.noindex/Lenslet.build/Release/Lenslet.build/DerivedSources/GeneratedAssetSymbols.swift" : {
+    "index-unit-output-path" : "/Lenslet.build/Release/Lenslet.build/Objects-normal/arm64/GeneratedAssetSymbols.o",
+    "llvm-bc" : "/Users/kris/Documents/04_Research_Dev/VSC/Lenslet/build/Build/Intermediates.noindex/Lenslet.build/Release/Lenslet.build/Objects-normal/arm64/GeneratedAssetSymbols.bc",
+    "object" : "/Users/kris/Documents/04_Research_Dev/VSC/Lenslet/build/Build/Intermediates.noindex/Lenslet.build/Release/Lenslet.build/Objects-normal/arm64/GeneratedAssetSymbols.o"
+  },
+  "/Users/kris/Documents/04_Research_Dev/VSC/Lenslet/macOS/Lenslet/Lenslet/ContentView.swift" : {
+    "index-unit-output-path" : "/Lenslet.build/Release/Lenslet.build/Objects-normal/arm64/ContentView.o",
+    "llvm-bc" : "/Users/kris/Documents/04_Research_Dev/VSC/Lenslet/build/Build/Intermediates.noindex/Lenslet.build/Release/Lenslet.build/Objects-normal/arm64/ContentView.bc",
+    "object" : "/Users/kris/Documents/04_Research_Dev/VSC/Lenslet/build/Build/Intermediates.noindex/Lenslet.build/Release/Lenslet.build/Objects-normal/arm64/ContentView.o"
+  },
+  "/Users/kris/Documents/04_Research_Dev/VSC/Lenslet/macOS/Lenslet/Lenslet/LensletApp.swift" : {
+    "index-unit-output-path" : "/Lenslet.build/Release/Lenslet.build/Objects-normal/arm64/LensletApp.o",
+    "llvm-bc" : "/Users/kris/Documents/04_Research_Dev/VSC/Lenslet/build/Build/Intermediates.noindex/Lenslet.build/Release/Lenslet.build/Objects-normal/arm64/LensletApp.bc",
+    "object" : "/Users/kris/Documents/04_Research_Dev/VSC/Lenslet/build/Build/Intermediates.noindex/Lenslet.build/Release/Lenslet.build/Objects-normal/arm64/LensletApp.o"
+  },
+  "/Users/kris/Documents/04_Research_Dev/VSC/Lenslet/macOS/Lenslet/Lenslet/LensletResult.swift" : {
+    "index-unit-output-path" : "/Lenslet.build/Release/Lenslet.build/Objects-normal/arm64/LensletResult.o",
+    "llvm-bc" : "/Users/kris/Documents/04_Research_Dev/VSC/Lenslet/build/Build/Intermediates.noindex/Lenslet.build/Release/Lenslet.build/Objects-normal/arm64/LensletResult.bc",
+    "object" : "/Users/kris/Documents/04_Research_Dev/VSC/Lenslet/build/Build/Intermediates.noindex/Lenslet.build/Release/Lenslet.build/Objects-normal/arm64/LensletResult.o"
+  },
+  "/Users/kris/Documents/04_Research_Dev/VSC/Lenslet/macOS/Lenslet/Lenslet/MemoryBrowserView.swift" : {
+    "index-unit-output-path" : "/Lenslet.build/Release/Lenslet.build/Objects-normal/arm64/MemoryBrowserView.o",
+    "llvm-bc" : "/Users/kris/Documents/04_Research_Dev/VSC/Lenslet/build/Build/Intermediates.noindex/Lenslet.build/Release/Lenslet.build/Objects-normal/arm64/MemoryBrowserView.bc",
+    "object" : "/Users/kris/Documents/04_Research_Dev/VSC/Lenslet/build/Build/Intermediates.noindex/Lenslet.build/Release/Lenslet.build/Objects-normal/arm64/MemoryBrowserView.o"
+  },
+  "/Users/kris/Documents/04_Research_Dev/VSC/Lenslet/macOS/Lenslet/Lenslet/MemoryStore.swift" : {
+    "index-unit-output-path" : "/Lenslet.build/Release/Lenslet.build/Objects-normal/arm64/MemoryStore.o",
+    "llvm-bc" : "/Users/kris/Documents/04_Research_Dev/VSC/Lenslet/build/Build/Intermediates.noindex/Lenslet.build/Release/Lenslet.build/Objects-normal/arm64/MemoryStore.bc",
+    "object" : "/Users/kris/Documents/04_Research_Dev/VSC/Lenslet/build/Build/Intermediates.noindex/Lenslet.build/Release/Lenslet.build/Objects-normal/arm64/MemoryStore.o"
+  },
+  "/Users/kris/Documents/04_Research_Dev/VSC/Lenslet/macOS/Lenslet/Lenslet/ResultView.swift" : {
+    "index-unit-output-path" : "/Lenslet.build/Release/Lenslet.build/Objects-normal/arm64/ResultView.o",
+    "llvm-bc" : "/Users/kris/Documents/04_Research_Dev/VSC/Lenslet/build/Build/Intermediates.noindex/Lenslet.build/Release/Lenslet.build/Objects-normal/arm64/ResultView.bc",
+    "object" : "/Users/kris/Documents/04_Research_Dev/VSC/Lenslet/build/Build/Intermediates.noindex/Lenslet.build/Release/Lenslet.build/Objects-normal/arm64/ResultView.o"
+  }
+}
