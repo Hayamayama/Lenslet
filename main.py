@@ -75,6 +75,12 @@ def parse_args() -> argparse.Namespace:
         help="Process raw text from a file instead of capturing the screen (clipboard flow).",
     )
 
+    parser.add_argument(
+        "--map",
+        action="store_true",
+        help="Return 2-D PCA projection of all embeddings as JSON for the knowledge map.",
+    )
+
     return parser.parse_args()
 
 
@@ -142,6 +148,12 @@ def main() -> int:
                 print(f"- {item.get('path', '')}  distance={item.get('distance', 0):.4f}")
                 print(item.get("text", "")[:200])
                 print()
+        return 0
+
+    if args.map:
+        from lenslet_core.map import get_graph_data
+        graph = get_graph_data()
+        print(json.dumps({"status": "success", **graph}, ensure_ascii=False, indent=2))
         return 0
 
     if args.text_file:
