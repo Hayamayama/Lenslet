@@ -788,6 +788,7 @@ private struct MenuBarView: View {
         Button("Capture") {
             LensletRuntime.shared.runLenslet()
         }
+        .keyboardShortcut("k", modifiers: [.command, .shift])
 
         Button("Import PDF") {
             LensletRuntime.shared.importPDF()
