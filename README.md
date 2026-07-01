@@ -18,8 +18,6 @@ Screen capture / Clipboard / PDF
   Browse · Search · Ask · Map
 ```
 
-> Early alpha. Built for personal use on macOS.
-
 ---
 
 ## Requirements
@@ -28,8 +26,20 @@ Screen capture / Clipboard / PDF
 |---|---|
 | macOS | 14 Sonoma or later |
 | Python | 3.11 or later |
-| Xcode | 16 or later |
+| Xcode | 16 or later (to build from source) |
 | Ollama | latest (for local LLM) |
+
+### Memory requirements for local models
+
+Lenslet defaults to `qwen3:4b` (~2.5 GB), which runs on any Apple Silicon Mac including the base 8 GB MacBook Air.
+
+| Mac unified memory | Recommended model | Notes |
+|---|---|---|
+| 8 GB | `qwen3:4b` | Default. Runs comfortably alongside normal apps. |
+| 16 GB | `qwen3:8b` | Better quality; switch in Settings → Model. |
+| 24 GB+ | `qwen3:14b` or larger | For best quality on capable hardware. |
+
+If your Mac has 8 GB of unified memory and you find local inference too slow, switching to Claude API in Settings → Model gives full speed with zero local resource use (requires an Anthropic API key and internet connection).
 
 ---
 

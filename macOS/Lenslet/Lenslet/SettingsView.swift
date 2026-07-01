@@ -13,7 +13,7 @@ final class LensletSettings {
     }
 
     var modelBackend: String = "ollama"
-    var ollamaModel: String = "qwen3:8b"
+    var ollamaModel: String = "qwen3:4b"
     var claudeModel: String = "claude-haiku-4-5-20251001"
     var claudeApiKey: String = ""
 
@@ -211,7 +211,7 @@ save({'\(key)': val})
                         }
                     }
                 }
-                Text("Ollama must be running locally. Pull models with `ollama pull <name>`.")
+                Text("Ollama must be running locally. Pull models with `ollama pull <name>`.\nRecommended: qwen3:4b (8 GB Mac), qwen3:8b (16 GB+), qwen3:14b (24 GB+).")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             } else {

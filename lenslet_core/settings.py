@@ -10,7 +10,7 @@ SETTINGS_PATH = Path.home() / ".lenslet" / "settings.json"
 
 DEFAULTS: dict[str, Any] = {
     "model_backend": "ollama",
-    "ollama_model": "qwen3:8b",
+    "ollama_model": "qwen3:4b",
     "claude_model": "claude-haiku-4-5-20251001",
     "claude_api_key": "",
     "vision_enabled": False,
