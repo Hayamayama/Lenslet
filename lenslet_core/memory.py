@@ -18,6 +18,8 @@ def _safe_text(value: str | None) -> str:
 def save_memory(
     ocr_text: str,
     summary: str,
+    tags: list[str] | None = None,
+    source: str = "screen_capture",
 ) -> Path:
     ocr_text = _safe_text(ocr_text)
     summary = _safe_text(summary)
@@ -29,13 +31,16 @@ def save_memory(
     memory_id = f"{now.strftime('%Y-%m-%d_%H-%M-%S')}_{uuid4().hex[:8]}"
     path = MEMORY_DIR / f"{memory_id}.md"
 
+    tags_line = f"Tags: {', '.join(tags)}" if tags else "Tags:"
+
     content = dedent(
         f"""
         # Lenslet Memory
 
         Created: {now.isoformat()}
-        Source: screen_capture
+        Source: {source}
         Memory ID: {memory_id}
+        {tags_line}
 
         ## Summary
 

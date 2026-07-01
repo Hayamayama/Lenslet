@@ -22,6 +22,31 @@ def _error_result(message: str, image_path: Path | None = None) -> dict[str, Any
     }
 
 
+def run_text_pipeline(text: str) -> dict[str, Any]:
+    """Run the pipeline with raw text (e.g. clipboard), skipping OCR."""
+    if not text or not text.strip():
+        return _error_result("Input text is empty.")
+
+    try:
+        summary = summarize(text)
+        related = search_related(summary, n_results=3)
+        memory_path = save_memory(ocr_text=text, summary=summary)
+        memory_id = memory_path.stem
+        add_memory(memory_id=memory_id, text=text, summary=summary, path=memory_path)
+
+        return {
+            "status": "success",
+            "image_path": None,
+            "ocr": text,
+            "summary": summary,
+            "memory_path": str(memory_path),
+            "related": related,
+            "error": None,
+        }
+    except Exception as exc:
+        return _error_result(str(exc))
+
+
 def run_capture_pipeline(
     image_path: str | Path | None = None,
 ) -> dict[str, Any]:

@@ -42,6 +42,11 @@ struct MemoryStore {
         let memoryID = metadataValue("Memory ID", in: raw) ?? fallbackID
         let createdAt = parseDate(metadataValue("Created", in: raw)) ?? fileModificationDate(fileURL)
         let source = metadataValue("Source", in: raw)
+        let tagsRaw = metadataValue("Tags", in: raw) ?? ""
+        let tags = tagsRaw.isEmpty ? [] : tagsRaw
+            .components(separatedBy: ",")
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
         let summary = section("Summary", in: raw)
         let originalText = section("Original Capture", in: raw)
         let title = titleForMemory(
@@ -62,8 +67,25 @@ struct MemoryStore {
             summary: summary,
             originalText: originalText,
             source: source,
-            createdAt: createdAt
+            createdAt: createdAt,
+            tags: tags
         )
+    }
+
+    func saveTags(_ tags: [String], for memory: LensletMemory) {
+        let fileURL = URL(fileURLWithPath: memory.path)
+        guard var raw = try? String(contentsOf: fileURL, encoding: .utf8) else { return }
+
+        let tagsValue = tags.joined(separator: ", ")
+        let newLine = "Tags: \(tagsValue)"
+
+        if let range = raw.range(of: #"(?m)^Tags:.*$"#, options: .regularExpression) {
+            raw.replaceSubrange(range, with: newLine)
+        } else if let range = raw.range(of: #"(?m)^Memory ID:.*$"#, options: .regularExpression) {
+            raw.insert(contentsOf: "\n\(newLine)", at: range.upperBound)
+        }
+
+        try? raw.write(to: fileURL, atomically: true, encoding: .utf8)
     }
 
     static func defaultMemoriesDirectory() -> URL {
@@ -144,11 +166,14 @@ struct MemoryStore {
         summary: String?,
         originalText: String?
     ) -> String {
-        let text = summary?.nilIfBlank ?? originalText?.nilIfBlank ?? "No preview available."
-        return clipped(
-            text.replacingOccurrences(of: "\n", with: " "),
-            maxLength: 240
-        )
+        // Skip the first line (already used as title), show subsequent content
+        let source = summary?.nilIfBlank ?? originalText?.nilIfBlank ?? ""
+        let lines = source.components(separatedBy: .newlines)
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+        let body = lines.dropFirst().joined(separator: " ")
+        let text = body.nilIfBlank ?? lines.first ?? "No preview available."
+        return clipped(text, maxLength: 200)
     }
 
     private func clipped(_ text: String, maxLength: Int) -> String {

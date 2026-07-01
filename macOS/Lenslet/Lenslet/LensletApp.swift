@@ -1,6 +1,7 @@
 import SwiftUI
 import AppKit
 import UniformTypeIdentifiers
+import ApplicationServices
 
 // MARK: - Runtime
 
@@ -14,6 +15,79 @@ final class LensletRuntime {
     var queryWindow: NSWindow?
     var statusWindow: NSWindow?
     var currentProcess: Process?
+    private var globalHotkeyMonitor: Any?
+
+    // MARK: Clipboard capture
+
+    func captureClipboard() {
+        guard let text = NSPasteboard.general.string(forType: .string),
+              !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            showErrorWindow("Clipboard is empty or contains no text.")
+            return
+        }
+
+        let projectURL = self.projectURL
+        let pythonURL = projectURL.appendingPathComponent(".venv/bin/python")
+        guard FileManager.default.fileExists(atPath: pythonURL.path) else {
+            showErrorWindow("Python venv not found at \(pythonURL.path)")
+            return
+        }
+
+        let tempURL = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("lenslet_clip_\(UUID().uuidString).txt")
+        guard (try? text.write(to: tempURL, atomically: true, encoding: .utf8)) != nil else {
+            showErrorWindow("Could not write clipboard text to temp file.")
+            return
+        }
+
+        let runID = UUID().uuidString
+        let resultURL = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("lenslet_result_\(runID).json")
+        let errorURL = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("lenslet_error_\(runID).log")
+
+        showStatusWindow("Saving clipboard to memory…")
+
+        let process = Process()
+        process.currentDirectoryURL = projectURL
+        process.executableURL = pythonURL
+        process.arguments = ["main.py", "--json", "--text-file", tempURL.path]
+        process.environment = [
+            "PATH": "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin",
+            "PYTHONPATH": projectURL.path,
+        ]
+        let outPipe = Pipe()
+        process.standardOutput = outPipe
+        process.standardError = Pipe()
+
+        process.terminationHandler = { [weak self] _ in
+            let data = outPipe.fileHandleForReading.readDataToEndOfFile()
+            try? data.write(to: resultURL)
+            try? FileManager.default.removeItem(at: tempURL)
+            DispatchQueue.main.async {
+                guard let self else { return }
+                self.closeStatusWindow()
+                self.handlePythonResult(resultURL: resultURL, errorURL: errorURL)
+            }
+        }
+
+        currentProcess = process
+        try? process.run()
+    }
+
+    // MARK: Global hotkey (⌘⇧K)
+
+    func setupGlobalHotkey() {
+        let opts = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary
+        guard AXIsProcessTrustedWithOptions(opts) else { return }
+
+        globalHotkeyMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { event in
+            let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+            if event.keyCode == 40 && flags == [.command, .shift] {  // keyCode 40 = K
+                DispatchQueue.main.async { LensletRuntime.shared.runLenslet() }
+            }
+        }
+    }
 
     var projectURL: URL {
         if let envPath = ProcessInfo.processInfo.environment["LENSLET_PROJECT_ROOT"], !envPath.isEmpty {
@@ -779,43 +853,53 @@ private struct MenuBarView: View {
     @Environment(\.openWindow) private var openWindow
 
     var body: some View {
-        Button("Open Lenslet") {
-            openWindow(id: "main")
-        }
+        Group {
+            Button("Open Lenslet") {
+                openWindow(id: "main")
+            }
 
-        Divider()
+            Divider()
 
-        Button("Capture") {
-            LensletRuntime.shared.runLenslet()
-        }
-        .keyboardShortcut("k", modifiers: [.command, .shift])
+            Button("Capture Screen") {
+                LensletRuntime.shared.runLenslet()
+            }
+            .keyboardShortcut("k", modifiers: [.command, .shift])
 
-        Button("Import PDF") {
-            LensletRuntime.shared.importPDF()
-        }
+            Button("Capture Clipboard") {
+                LensletRuntime.shared.captureClipboard()
+            }
+            .keyboardShortcut("v", modifiers: [.command, .shift])
 
-        Button("Ask Lenslet") {
-            LensletRuntime.shared.askLenslet()
-        }
+            Button("Import PDF") {
+                LensletRuntime.shared.importPDF()
+            }
 
-        Button("Documents") {
-            LensletRuntime.shared.showDocuments()
-        }
+            Button("Ask Lenslet") {
+                LensletRuntime.shared.askLenslet()
+            }
 
-        Button("Show Last Result") {
-            if let result = LensletRuntime.shared.latestResult {
-                LensletRuntime.shared.showResultWindow(result)
+            Button("Documents") {
+                LensletRuntime.shared.showDocuments()
+            }
+
+            Button("Show Last Result") {
+                if let result = LensletRuntime.shared.latestResult {
+                    LensletRuntime.shared.showResultWindow(result)
+                }
+            }
+
+            Divider()
+
+            SettingsLink {
+                Text("Settings…")
+            }
+
+            Button("Quit") {
+                NSApplication.shared.terminate(nil)
             }
         }
-
-        Divider()
-
-        SettingsLink {
-            Text("Settings…")
-        }
-
-        Button("Quit") {
-            NSApplication.shared.terminate(nil)
+        .onAppear {
+            LensletRuntime.shared.setupGlobalHotkey()
         }
     }
 }

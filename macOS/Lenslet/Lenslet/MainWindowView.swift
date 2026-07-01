@@ -16,6 +16,7 @@ struct MainWindowView: View {
     @State private var memories: [LensletMemory] = []
     @State private var selectedMemory: LensletMemory?
     @State private var searchText = ""
+    @State private var selectedTag: String? = nil
     @State private var relatedMemories: [RelatedMemory] = []
     @State private var isLoadingRelated = false
 
@@ -26,10 +27,19 @@ struct MainWindowView: View {
 
     private let store = MemoryStore()
 
+    private var allTags: [String] {
+        let tags = memories.flatMap { $0.tags }
+        return Array(Set(tags)).sorted()
+    }
+
     private var filteredMemories: [LensletMemory] {
         let q = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !q.isEmpty else { return memories }
-        return memories.filter {
+        var result = memories
+        if let tag = selectedTag {
+            result = result.filter { $0.tags.contains(tag) }
+        }
+        guard !q.isEmpty else { return result }
+        return result.filter {
             $0.title.localizedCaseInsensitiveContains(q) ||
             $0.preview.localizedCaseInsensitiveContains(q) ||
             ($0.summary?.localizedCaseInsensitiveContains(q) ?? false) ||
@@ -86,6 +96,15 @@ struct MainWindowView: View {
                             isLoadingRelated: isLoadingRelated,
                             onSelectRelated: { path in
                                 selectedMemory = memories.first { $0.path == path }
+                            },
+                            onTagsChanged: { newTags in
+                                store.saveTags(newTags, for: memory)
+                                if let idx = memories.firstIndex(where: { $0.id == memory.id }) {
+                                    var updated = memories[idx]
+                                    updated.tags = newTags
+                                    memories[idx] = updated
+                                    selectedMemory = memories[idx]
+                                }
                             }
                         )
                         .id(memory.id)
@@ -112,9 +131,44 @@ struct MainWindowView: View {
     private var sidebarContent: some View {
         VStack(spacing: 0) {
             searchBar
+            if !allTags.isEmpty {
+                tagFilterBar
+            }
             Divider()
             memoryList
         }
+    }
+
+    private var tagFilterBar: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 6) {
+                tagChip(label: "All", isSelected: selectedTag == nil) {
+                    selectedTag = nil
+                }
+                ForEach(allTags, id: \.self) { tag in
+                    tagChip(label: tag, isSelected: selectedTag == tag) {
+                        selectedTag = selectedTag == tag ? nil : tag
+                    }
+                }
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 7)
+        }
+    }
+
+    private func tagChip(label: String, isSelected: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(label)
+                .font(.caption)
+                .fontWeight(isSelected ? .medium : .regular)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 4)
+                .background(isSelected ? Color.accentColor.opacity(0.15) : Color.secondary.opacity(0.1))
+                .foregroundStyle(isSelected ? Color.accentColor : Color.secondary)
+                .clipShape(Capsule())
+                .overlay(Capsule().stroke(isSelected ? Color.accentColor.opacity(0.4) : Color.clear, lineWidth: 1))
+        }
+        .buttonStyle(.plain)
     }
 
     private var searchBar: some View {
@@ -415,6 +469,11 @@ struct MemoryDetailView: View {
     var relatedMemories: [RelatedMemory] = []
     var isLoadingRelated: Bool = false
     var onSelectRelated: ((String) -> Void)? = nil
+    var onTagsChanged: (([String]) -> Void)? = nil
+
+    @State private var tags: [String] = []
+    @State private var newTagInput = ""
+    @State private var isAddingTag = false
 
     private var formattedDate: String {
         guard let date = memory.createdAt else { return "" }
@@ -428,6 +487,7 @@ struct MemoryDetailView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 24) {
                 headerSection
+                tagEditor
                 actionBar
                 Divider()
                 if let summary = memory.summary {
@@ -442,6 +502,64 @@ struct MemoryDetailView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .background(Color(nsColor: .textBackgroundColor))
+        .onAppear { tags = memory.tags }
+        .onChange(of: memory.id) { _, _ in tags = memory.tags }
+    }
+
+    private var tagEditor: some View {
+        HStack(spacing: 6) {
+            ForEach(tags, id: \.self) { tag in
+                HStack(spacing: 3) {
+                    Text(tag)
+                        .font(.caption)
+                    Button {
+                        tags.removeAll { $0 == tag }
+                        onTagsChanged?(tags)
+                    } label: {
+                        Image(systemName: "xmark")
+                            .font(.system(size: 8, weight: .bold))
+                    }
+                    .buttonStyle(.plain)
+                }
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+                .background(Color.accentColor.opacity(0.12))
+                .foregroundStyle(Color.accentColor)
+                .clipShape(Capsule())
+            }
+
+            if isAddingTag {
+                TextField("Tag name", text: $newTagInput)
+                    .textFieldStyle(.plain)
+                    .font(.caption)
+                    .frame(width: 90)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(Color.secondary.opacity(0.1))
+                    .clipShape(Capsule())
+                    .onSubmit { commitNewTag() }
+                    .onExitCommand { isAddingTag = false; newTagInput = "" }
+            } else {
+                Button {
+                    isAddingTag = true
+                } label: {
+                    Label("Add tag", systemImage: "plus")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+            }
+        }
+    }
+
+    private func commitNewTag() {
+        let trimmed = newTagInput.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !trimmed.isEmpty && !tags.contains(trimmed) {
+            tags.append(trimmed)
+            onTagsChanged?(tags)
+        }
+        newTagInput = ""
+        isAddingTag = false
     }
 
     private var headerSection: some View {
